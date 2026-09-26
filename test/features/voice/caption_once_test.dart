@@ -79,7 +79,7 @@ void main() {
   });
 
   screenTest('«اتكلم»: «معلش، مافهمتش…» مكتوبة مرة — في الورقة، مش في الكارت كمان', (tester) async {
-    await setUpWith([null]); // المايك اشتغل وما سمعش حاجة
+    await setUpWith(const []);
     await pumpWithCaption(
       tester,
       Scaffold(
@@ -97,12 +97,12 @@ void main() {
     listener.hold = true;
     await tester.tap(find.byKey(const ValueKey('listen-wake')));
     await settle(tester);
-    expect(find.text('سامعك…'), findsOneWidget);
+    expect(find.text('سامعك…'), findsOneWidget, reason: 'كلمة الدايرة');
     expect(voice.caption.value, isNull, reason: 'ولا جملة قبل المايك');
 
-    // سكوت ← «مافهمتش» بتتقال — والتسجيل طويل
+    // كلام مش مفهوم ← «مافهمتش» بتتقال — والتسجيل طويل (السكوت راحة، مش «مافهمتش»)
     player.holdPlayback = true;
-    listener.hear(null);
+    listener.hear('كلام مش مفهوم');
     await settle(tester);
     expect(voice.caption.value, voiceLine('lis_not_understood'), reason: 'الجملة لسه بتتقال');
     expect(find.text(voiceLine('lis_not_understood')), findsOneWidget, reason: 'مرة واحدة');
@@ -118,7 +118,7 @@ void main() {
   });
 
   screenTest('«كلّمني»: «مافهمتش» مكتوبة مرة — في الورقة، مش في الكارت كمان', (tester) async {
-    await setUpWith([null]);
+    await setUpWith(['كلام مش مفهوم خالص']);
     await pumpWithCaption(tester, TodayScreen(routine: normalDay, now: DateTime(2026, 8, 31, 8)));
     player.holdPlayback = true;
     await tester.tap(find.byKey(const ValueKey('talk-button')));

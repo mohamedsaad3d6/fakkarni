@@ -9,6 +9,7 @@ import 'package:speech_to_text/speech_to_text.dart';
 import '../../core/diagnostics.dart';
 import 'listen_session.dart';
 import 'speech_listener.dart';
+import 'stt_driver.dart';
 
 /// متعرّف كلام الموبايل — **الملف الوحيد اللي بيستورد `speech_to_text`.**
 ///
@@ -32,7 +33,13 @@ import 'speech_listener.dart';
 ///   عطل «دايم» من مهمة قديمة يوصل — ده جزء من «سامعك» وبعدها «مش قادر أساعد».
 /// - **مفيش إلغاء في أول كل سماع إلا لو فيه حاجة شغّالة**، وبعد أي إلغاء بنستنى
 ///   الأحداث القديمة تخلص ([_settle]) قبل ما نبدأ.
-class SpeechToTextListener implements SpeechListener {
+class SpeechToTextListener implements SttDriver {
+  @override
+  String get name => 'device';
+
+  @override
+  bool get isSupported => true;
+
   final SpeechToText _stt = SpeechToText();
   bool _ready = false;
   String? _localeId;

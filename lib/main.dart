@@ -3,7 +3,10 @@ import 'data/services/pending_actions.dart';
 import 'data/voice/audio_focus.dart';
 import 'data/voice/audio_voice_player.dart';
 import 'data/voice/device_tts.dart';
+import 'data/voice/cloud_stt.dart';
+import 'data/voice/mic_listener.dart';
 import 'data/voice/speech_to_text_listener.dart';
+import 'data/voice/stt_driver.dart';
 import 'data/voice/voice_service.dart';
 import 'features/voice/voice_caption.dart';
 import 'package:flutter/material.dart';
@@ -142,12 +145,15 @@ Future<void> main() async {
   // «الرفيق الصوتي» — بيتكلم بس، من المقدمة وبس (مفيش صوت في صحوة الخلفية).
   // إعداداته بتتقرا هنا؛ تنبيه الجرعة بيوقّفه: دوسة الإشعار (lastPayload)
   // وزرار الإشعار وشاشة التذكير كلهم بيندهوا stop().
-  // «بيسمع» (المرحلة ٢): متعرّف كلام الموبايل — بيتجهّز عند أول دوسة مايك، مش هنا
+  // «بيسمع» (المرحلة ٢): متعرّف كلام الموبايل — بيتجهّز عند أول دوسة مايك، مش هنا.
+  // المحرّك ورا وصلة (`STT_DRIVER`، الافتراضي `device`)؛ `cloud` كعب مقفول =
+  // مفيش مايك. [MicListener] فوقه: سماع واحد في المرة، ونهاية الكلام بتاعتنا.
+  final stt = pickSttDriver(sttDriverName, device: SpeechToTextListener.new, cloud: CloudSttDriver.new);
   final voice = VoiceService(
     player: AudioVoicePlayer(),
     tts: DeviceTts(),
     focus: AudioSessionFocus(),
-    listener: SpeechToTextListener(),
+    listener: stt == null ? null : MicListener(stt),
     // جملتنا خلصت والجلسة اتسلّمت — نفَس قبل ما المايك يتفتح
     micSettle: VoiceService.defaultMicSettle,
   );

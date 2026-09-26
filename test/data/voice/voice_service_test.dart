@@ -49,14 +49,24 @@ class FakeTts implements VoiceTts {
   final spoken = <String>[];
   int stops = 0;
   double? rate;
+
+  /// الكلام «بيفضل شغّال» لحد ما `stop()` تتنده.
+  bool hold = false;
+  Completer<void>? _hold;
   @override
   Future<void> speak(String text, {required double rate, required double volume}) async {
     spoken.add(text);
     this.rate = rate;
+    if (hold) await (_hold = Completer<void>()).future;
   }
 
   @override
-  Future<void> stop() async => stops++;
+  Future<void> stop() async {
+    stops++;
+    final c = _hold;
+    if (c != null && !c.isCompleted) c.complete();
+    _hold = null;
+  }
 }
 
 class FakeFocus implements VoiceAudioFocus {

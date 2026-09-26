@@ -199,18 +199,64 @@ int? _composeNumber(List<int> v) {
 
 // ---------------------------------------------------------------- أيوه / لأ
 
-const _yes = {'ايوه', 'ايوا', 'اه', 'اها', 'اهه', 'تمام', 'ماشي', 'اكيد', 'صح', 'نعم', 'موافق', 'طبعا', 'اوك', 'اوكي', 'خلاص', 'يس'};
-const _no = {'لا', 'لاء', 'لاه', 'مش', 'بعدين', 'لسه', 'غلط', 'نو', 'خطا', 'ماشيش'};
+/// رد على «صح كده؟».
+enum ReplyClass { affirm, deny, unclear }
 
-/// أيوه = true، لأ = false، مش مفهوم = null. أول كلمة مفهومة هي اللي بتحكم
-/// («لا مش كده» = لأ، «ايوه تمام» = أيوه).
-bool? parseYesNo(String text) {
-  for (final t in _tokens(text)) {
-    if (_yes.contains(t)) return true;
-    if (_no.contains(t)) return false;
-  }
-  return null;
+// **بورت `affirm.js` بتاع jarvis-ai-finance، مدموج مع قايمتنا.** قرار حتمي —
+// عمره ما يبقى ذكاء: التأكيد اللي بيكتب في القاعدة ما يتحكمش فيه موديل.
+// - **أول كلمة (أو أول كلمتين) هي اللي بتحكم** — `^\s*(...)` هناك. «ايوه»
+//   في آخر الجملة مش تأكيد.
+// - **الرفض قبل القبول**: «لا ماشي خليها» رفض.
+// - المطابقة على الكلمة كلها (زي `(?![\p{L}\p{N}])` هناك): «لازم» مش «لا»،
+//   و«ماشيش» مش «ماشي».
+// - أي حاجة تانية = [ReplyClass.unclear] — **بنسأل تاني**، عمرها ما تأكّد.
+
+/// القبول — `AFFIRM` بالحرف (بعد التطبيع: أ→ا، ة→ه، ى→ي، من غير تشكيل)،
+/// وقايمتنا القديمة.
+const affirmWords = {
+  // affirm.js
+  'ايوه', 'اوكي', 'اوك', 'تمام', 'ماشي', 'اكد', 'نعم', 'اه',
+  'okay', 'ok', 'yes', 'yep', 'yeah', 'sure', 'confirm',
+  // فكّرني
+  'ايوا', 'اها', 'اهه', 'اكيد', 'صح', 'موافق', 'طبعا', 'خلاص', 'يس',
+};
+
+/// الرفض — `DENY` بالحرف، وقايمتنا القديمة.
+const denyWords = {
+  // affirm.js
+  'ماتعملش', 'متعملش', 'الغاء', 'الغي', 'بلاش', 'كنسل', 'سيبك', 'لاه', 'لا',
+  'nevermind', 'nope', 'cancel', 'stop', 'dont', 'nah', 'no',
+  // فكّرني
+  'لاء', 'بعدين', 'لسه', 'غلط', 'نو', 'خطا', 'ماشيش',
+};
+
+/// عبارات من كلمتين — `do it` / `go ahead` / `never mind`. **«مش» لوحدها مش
+/// رفض** («مش عارف» = مش واضح، زي `affirm.js`) — في العبارات دي بس.
+const _affirmPhrases = {'do it', 'go ahead'};
+const _denyPhrases = {'never mind', 'مش دلوقتي', 'مش كده', 'مش عايز', 'مش عايزه', 'مش صح', 'مش ده', 'مش دي', 'مش هو', 'مش هي'};
+
+/// التطبيع للمطابقة بس — الكلام الأصلي بيتعرض زي ما هو. `normalizeForMatch`
+/// هناك: من غير علامات عرض الاتجاه ولا المسافات الصفرية، و«don't» = «dont».
+String normalizeReply(String text) =>
+    normalizeArabic(text.replaceAll(RegExp('[\u200B-\u200F\u202A-\u202E\u2066-\u2069]'), '').replaceAll(RegExp("['’]"), ''));
+
+/// «صح كده؟» ← أيوه / لأ / مش واضح. الرفض بيتفحص الأول.
+ReplyClass classifyReply(String text) {
+  final words = normalizeReply(text).split(' ').where((w) => w.isNotEmpty).toList();
+  if (words.isEmpty) return ReplyClass.unclear;
+  final first = words.first;
+  final two = words.length > 1 ? '${words[0]} ${words[1]}' : '';
+  if (denyWords.contains(first) || _denyPhrases.contains(two)) return ReplyClass.deny;
+  if (affirmWords.contains(first) || _affirmPhrases.contains(two)) return ReplyClass.affirm;
+  return ReplyClass.unclear;
 }
+
+/// أيوه = true، لأ = false، مش واضح = null — [classifyReply] نفسها.
+bool? parseYesNo(String text) => switch (classifyReply(text)) {
+      ReplyClass.affirm => true,
+      ReplyClass.deny => false,
+      ReplyClass.unclear => null,
+    };
 
 // ---------------------------------------------------------------- راجل / ست
 
@@ -404,6 +450,6 @@ String? parseName(String text) {
   }
   if (name.isEmpty || name.length > 40) return null;
   final words = normalizeArabic(name).split(' ');
-  if (words.every((w) => _yes.contains(w) || _no.contains(w))) return null;
+  if (words.every((w) => affirmWords.contains(w) || denyWords.contains(w))) return null;
   return name;
 }

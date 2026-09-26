@@ -11,11 +11,12 @@ import '../medication/add_medication_screen.dart';
 import '../medication/medication_draft.dart';
 import '../../domain/voice/voice_catalog.dart';
 import 'command_flow.dart';
-import 'listen_button.dart' show PulsingMic;
+import 'mic_orb.dart';
 
 /// «🎤 كلّمني» — على «يومك» تحت التحية (أكبر في نمط كبار السن). دوسة →
-/// ورقة فيها اللي بيحصل بالكلام الكبير: «اتكلم، أنا سامعك» ← «ثانية واحدة»
-/// ← «فهمت: … صح كده؟» + «أيوه»/«لأ» (أو أزرار «أنهي واحد؟») ← الرد.
+/// المايك على طول، وورقة فوقها الدايرة ([MicOrb]) بكلمة حالتها: «سامعك…» ←
+/// «بفكّر…» ← اللي اتفهم كبير + «صح كده؟» + «أيوه»/«لأ» (أو أزرار «أنهي
+/// واحد؟») ← الرد. دوسة الدايرة والموبايل بيتكلم بتقطعه وبتسمع.
 ///
 /// بيظهر لما فيه مايك في النسخة والإذن مش مرفوض — **حتى والصوت مقفول**:
 /// ساعتها الجمل بتتكتب في الورقة بدل ما تتقال. مفيش `AppScope` = مفيش زرار.
@@ -172,46 +173,43 @@ class _CommandBodyState extends State<_CommandBody> {
   Widget build(BuildContext context) {
     final flow = widget.flow;
     final big = TextStyle(fontSize: F.subtitleSize, fontWeight: FontWeight.w700, color: F.ink, height: 1.5);
+    final quiet = TextStyle(fontSize: F.minBodySize, color: F.mutedDark, height: 1.5);
+    // «سامعك…» و«بفكّر…» بتقولهم الدايرة — مش سطر تاني بنفس الكلمة
+    final showShown = flow.shown.isNotEmpty && flow.phase != CommandPhase.listening && flow.phase != CommandPhase.thinking;
     return ListenableBuilder(
-      listenable: flow,
+      // الدورة، و«بيتكلم» (الدايرة بتقول «برد عليك — دوس عشان تقاطعني»)
+      listenable: Listenable.merge([flow, flow.voice.caption]),
       builder: (context, _) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              if (flow.phase == CommandPhase.listening)
-                // المايك مفتوح — بينبض لحظة ما بيسمع بس
-                const PulsingMic()
-              else
-                Icon(
-                  flow.phase == CommandPhase.thinking ? Icons.hourglass_top : Icons.record_voice_over_outlined,
-                  size: 32,
-                  color: F.mutedDark,
-                ),
-              const SizedBox(width: F.s10),
-              Expanded(
-                child: Text(
-                  flow.shown.isEmpty ? 'ثواني…' : flow.shown,
-                  key: const ValueKey('talk-shown'),
-                  style: flow.phase == CommandPhase.confirming ? big.copyWith(fontSize: F.screenTitleSize) : big,
-                ),
-              ),
-            ],
-          ),
+          // الدايرة: دوسة واحدة لكل حالة — الدورة بتقرر ([CommandFlow.tapMic])
+          Center(child: MicOrb(state: flow.mic, onTap: flow.tapMic)),
+          if (showShown) ...[
+            const SizedBox(height: F.s12),
+            Text(
+              flow.shown,
+              key: const ValueKey('talk-shown'),
+              style: flow.phase == CommandPhase.confirming ? big.copyWith(fontSize: F.screenTitleSize) : big,
+            ),
+          ],
           if (flow.phase == CommandPhase.listening) ...[
             // الكلام وهو بيتقال
             if (flow.partial.isNotEmpty) ...[
               const SizedBox(height: F.s10),
-              Text(flow.partial, key: const ValueKey('talk-partial'), style: TextStyle(fontSize: F.subtitleSize, color: F.ink, height: 1.4)),
+              Text(flow.partial, key: const ValueKey('talk-partial'), textAlign: TextAlign.center, style: TextStyle(fontSize: F.subtitleSize, color: F.ink, height: 1.4)),
             ],
             if (flow.hint != null) ...[
               const SizedBox(height: F.s10),
-              Text(flow.hint!, key: const ValueKey('talk-hint'), style: TextStyle(fontSize: F.minBodySize, color: F.mutedDark, height: 1.5)),
+              Text(flow.hint!, key: const ValueKey('talk-hint'), style: quiet),
             ],
           ],
           if (flow.phase == CommandPhase.confirming) ...[
             const SizedBox(height: F.s4),
             Text(voiceLine('lis_confirm'), style: TextStyle(fontSize: F.minBodySize, color: F.ink)),
+          ],
+          if (flow.note != null && flow.phase != CommandPhase.listening) ...[
+            const SizedBox(height: F.s10),
+            Text(flow.note!, key: const ValueKey('talk-note'), textAlign: TextAlign.center, style: TextStyle(fontSize: F.minBodySize, color: F.ink, height: 1.5)),
           ],
           const SizedBox(height: F.gap),
           switch (flow.phase) {
@@ -233,14 +231,8 @@ class _CommandBodyState extends State<_CommandBody> {
                   FSecondaryButton(key: const ValueKey('talk-no'), label: 'ولا واحد', onPressed: flow.confirmNo),
                 ],
               ),
-            CommandPhase.answering => Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  FPrimaryButton(key: const ValueKey('talk-again'), label: 'قول تاني', onPressed: flow.again),
-                  const SizedBox(height: F.s10),
-                  FSecondaryButton(key: const ValueKey('talk-close'), label: 'تمام', onPressed: () => Navigator.of(context).maybePop()),
-                ],
-              ),
+            // الرد اتقال — «قول تاني» هي الدايرة نفسها
+            CommandPhase.answering => FSecondaryButton(key: const ValueKey('talk-close'), label: 'تمام', onPressed: () => Navigator.of(context).maybePop()),
             // «اقفل»: المايك يقف الأول، وبعدين الورقة
             _ => FSecondaryButton(
                 key: const ValueKey('talk-close'),

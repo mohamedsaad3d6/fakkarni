@@ -14,6 +14,8 @@ import 'package:fakkarni/domain/escalation/escalation_ladder.dart';
 import 'package:fakkarni/domain/medication/medication_purpose.dart';
 import 'package:fakkarni/domain/scheduling/day_routine.dart';
 import 'package:fakkarni/domain/scheduling/dose_schedule.dart';
+import 'package:fakkarni/data/voice/speech_listener.dart';
+import 'package:fakkarni/domain/voice/mic_state.dart';
 import 'package:fakkarni/domain/voice/voice_catalog.dart';
 import 'package:fakkarni/features/voice/command_flow.dart';
 import 'package:fakkarni/features/voice/voice_flags.dart';
@@ -385,5 +387,87 @@ void main() {
     }
     expect(f.phase, CommandPhase.idle);
     expect(said().where((s) => s == 'lis_not_understood'), isEmpty);
+  });
+
+  group('الماكينة (MicOrb)', () {
+    test('سكوت = راحة: ولا «مافهمتش»، والدايرة «دوس واتكلم»، ومفيش سماع لوحده', () async {
+      final f = await flowWith([null]);
+      await f.start();
+      expect(f.phase, CommandPhase.idle);
+      expect(f.mic, MicState.idle);
+      expect(f.note, isNotNull);
+      expect(said(), isEmpty);
+      expect(f.failures, 0, reason: 'السكوت مش تعثّر');
+      await Future<void>.delayed(Duration.zero);
+      expect(listener.listens, 1);
+    });
+
+    test('«أيوه» بالصوت على «صح كده؟» ← نفس سكّة الزرار؛ مش واضح ← نسأل تاني', () async {
+      await seed('Concor');
+      await schedule();
+      final f = await flowWith(['أخدت الدوا', 'يمكن', 'ايوه']);
+      await f.start();
+      expect(f.phase, CommandPhase.confirming);
+      await f.tapMic();
+      expect(f.phase, CommandPhase.confirming, reason: '«يمكن» مش أيوه');
+      expect(f.shown, contains('أخدت Concor'), reason: 'اللي اتفهم رجع مكانه');
+      expect(await stateOf('Concor'), DoseState.pending);
+      await f.tapMic();
+      expect(await stateOf('Concor'), DoseState.taken);
+      expect(listener.listens, 3, reason: 'كل سماع دوسة');
+    });
+
+    test('«لأ» بالصوت ← «تمام، مش هعمل حاجة»', () async {
+      await seed('Concor');
+      await schedule();
+      final f = await flowWith(['أخدت الدوا', 'لأ']);
+      await f.start();
+      await f.tapMic();
+      expect(said().last, 'cmd_cancelled');
+      expect(await stateOf('Concor'), DoseState.pending);
+    });
+
+    test('مقاطعة: الرد بيتقال ← دوسة الدايرة تسكّته وتسمع على طول', () async {
+      final f = await flowWith(['إيه دوايا الجاي', 'إيه أدويتي النهارده']);
+      tts.hold = true;
+      unawaited(f.start());
+      for (var i = 0; i < 50 && f.phase != CommandPhase.answering; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(f.mic, MicState.speaking);
+      bool? speakingAtListen;
+      listener.onListen = () => speakingAtListen = voice.speaking;
+      tts.hold = false;
+      await f.tapMic();
+      expect(speakingAtListen, isFalse);
+      expect(listener.listens, 2);
+    });
+
+    test('القاطع: ٥ وقعات في ١٠ ثواني ← «كلّمني» يتقفل على الشاشة دي', () async {
+      var t = DateTime(2026, 9, 26, 10);
+      listener = FakeListener(answers: List.filled(6, const ListenFailed('error_listen_failed')));
+      voice = VoiceService(player: player, tts: tts, listener: listener);
+      await voice.load();
+      final s = h.services;
+      final f = CommandFlow(
+        voice: voice,
+        services: AppServices(db: s.db, routines: s.routines, medications: s.medications, events: s.events, scheduler: s.scheduler, patientId: s.patientId, voice: voice),
+        routineDay: aug31,
+        clock: () => now,
+        onOpenAdd: (_) async => false,
+        onStartFailure: (_) async {},
+        breaker: MicBreaker(clock: () => t),
+      );
+      for (var i = 0; i < 4; i++) {
+        await f.tapMic();
+        expect(f.available, isTrue);
+        t = t.add(const Duration(seconds: 1));
+      }
+      await f.tapMic();
+      expect(f.available, isFalse);
+      expect(f.mic, MicState.off);
+      await f.tapMic();
+      expect(listener.listens, 5);
+    });
   });
 }

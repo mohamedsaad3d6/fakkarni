@@ -14,6 +14,7 @@ import '../../domain/medication/medication_purpose.dart';
 import '../../domain/scheduling/day_routine.dart';
 import '../../domain/scheduling/dose_schedule.dart';
 import '../../domain/voice/answer_parser.dart';
+import '../../domain/voice/mic_state.dart';
 import '../../domain/voice/voice_catalog.dart';
 import '../../domain/voice/voice_time.dart';
 import '../../domain/wording/rule_wording.dart';
@@ -82,7 +83,9 @@ class CommandFlow extends ChangeNotifier {
     Future<List<DoseEventView>> Function(DateTime day)? dosesFor,
     Future<Map<String, MedicationPurpose?>> Function()? purposesFor,
     Future<void> Function(String reason)? onStartFailure,
-  })  : _clock = clock ?? DateTime.now,
+    MicBreaker? breaker,
+  })  : breaker = breaker ?? MicBreaker(),
+        _clock = clock ?? DateTime.now,
         _onStartFailure = onStartFailure ?? recordListenProblem,
         _dosesFor = dosesFor ?? ((day) => services.events.watchDay(day).first),
         _purposesFor = purposesFor ??
@@ -96,8 +99,21 @@ class CommandFlow extends ChangeNotifier {
   final DateTime routineDay;
   final Future<void> Function(String reason) _onStartFailure;
 
-  /// المايك ما اشتغلش (مش الإذن) — «كلّمني» بيختفي من الشاشة دي.
+  /// المايك اتقفل على الشاشة دي (المتعرّف مش موجود، أو القاطع اشتغل) —
+  /// «كلّمني» بيختفي.
   bool startFailed = false;
+
+  /// ٥ وقعات في ١٠ ثواني ← المايك يتقفل على الشاشة دي (`webSpeechStt.js`).
+  final MicBreaker breaker;
+
+  /// سطر هادي تحت الدايرة وهي مرتاحة — مكتوب، ما بيتقالش.
+  String? note;
+
+  /// المايك مفتوح عشان «أيوه» / «لأ».
+  bool _reply = false;
+
+  /// اللي اتفهم — بيرجع مكانه بعد سماع الرد.
+  String _understood = '';
 
   /// بيفتح الفورم متعبّي وبيرجّع «اتحفظ؟» — «تمام، عملتها» بعدها بس.
   final Future<bool> Function(AddMedPrefill prefill) onOpenAdd;
@@ -139,6 +155,18 @@ class CommandFlow extends ChangeNotifier {
 
   bool get available => voice.listener != null && !voice.micDenied && !startFailed;
 
+  /// حالة الدايرة — نفس ماكينة `MicOrb` ([micStateLabel]).
+  MicState get mic {
+    if (startFailed || voice.micDenied) return MicState.off;
+    return switch (phase) {
+      CommandPhase.listening => MicState.listening,
+      CommandPhase.thinking => MicState.thinking,
+      _ when voice.speaking => MicState.speaking,
+      CommandPhase.confirming => MicState.confirming,
+      _ => MicState.idle,
+    };
+  }
+
   void _set(CommandPhase p, [String? text]) {
     if (_disposed) return;
     phase = p;
@@ -166,9 +194,11 @@ class CommandFlow extends ChangeNotifier {
   /// دوسة «كلّمني».
   Future<void> start() async {
     final listener = voice.listener;
-    if (listener == null || _busy) return;
+    if (listener == null || _busy || startFailed) return;
     _busy = true;
     try {
+      _reply = false;
+      note = null;
       final wasSpeaking = voice.speaking;
       await voice.stop();
       final gen = voice.interrupts;
@@ -205,22 +235,11 @@ class CommandFlow extends ChangeNotifier {
     // **الدوسة ← المايك على طول**: مفيش جملة قبله؛ النغمة من المتعرّف نفسه
     await voice.yieldToMic(settle: settle);
     if (_interrupted(gen)) return;
-    sessions++;
-    _set(CommandPhase.listening, 'سامعك…');
-    final result = await listener.listen(onPartial: (t) {
-      if (phase != CommandPhase.listening || _disposed) return;
-      partial = t;
-      notifyListeners();
-    });
-    if (_interrupted(gen) || phase != CommandPhase.listening) return; // دوسة كسبت
-    // المايك ما اشتغلش ≠ «مافهمتش»؛ اشتغل ووقع في النص = تعثّرة
-    if (result is ListenFailed && (!result.started || result.permission)) return _cantListen(result);
-    if (result is ListenFailed) return _fail(gen);
-    unawaited(clearListenProblem());
-    final text = result is ListenHeard ? result.text : null;
-    if (text == null || text.trim().isEmpty) return _fail(gen);
+    final text = await _hear(listener, gen);
+    if (text == null) return;
 
     final started = _clock();
+    _set(CommandPhase.thinking, 'بفكّر…');
     var cmd = parseCommand(text);
     var source = 'local';
     if (cmd.intent == CommandIntent.unknown && reader != null && voiceCommandsCloud) {
@@ -249,6 +268,58 @@ class CommandFlow extends ChangeNotifier {
     await _handle(cmd, gen);
   }
 
+  /// سماع واحد: الكلام، أو null (راحة بسطر، وقعة، أو دوسة كسبت).
+  Future<String?> _hear(SpeechListener listener, int gen) async {
+    sessions++;
+    _set(CommandPhase.listening, 'سامعك…');
+    final result = await listener.listen(onPartial: (t) {
+      if (phase != CommandPhase.listening || _disposed) return;
+      partial = t;
+      notifyListeners();
+    });
+    // المايك اتقفل: من هنا الدوسة الجاية مسموحة — **حتى والموبايل لسه بيقول
+    // الرد أو «صح كده؟»**. من غير ده الدوسة وقت الكلام كانت بتتبلع، والمقاطعة
+    // ما بتحصلش.
+    _busy = false;
+    if (_interrupted(gen) || phase != CommandPhase.listening) return null; // دوسة كسبت
+    switch (result) {
+      case ListenFailed(permission: true):
+        await _cantListen(result);
+        return null;
+      case ListenFailed():
+        await _stumble(result);
+        return null;
+      case ListenSilence() when partial.trim().isEmpty:
+        // **مفيش كلام مش عطل**: راحة والمايك فاضل — ولا جملة بتتقال
+        note = 'ما سمعتش حاجة — دوس واتكلم.';
+        _rest();
+        return null;
+      case ListenSilence():
+        unawaited(clearListenProblem());
+        return partial; // دوسة «خلصت» وهو بيتكلم
+      case ListenHeard(:final text):
+        unawaited(clearListenProblem());
+        if (text.trim().isEmpty) {
+          note = 'ما سمعتش حاجة — دوس واتكلم.';
+          _rest();
+          return null;
+        }
+        return text;
+    }
+  }
+
+  /// راحة: مستنيين «أيوه»/«لأ» لو ده كان سماع رد، وإلا idle.
+  void _rest() => _reply ? _set(CommandPhase.confirming, _understood) : _set(CommandPhase.idle, '');
+
+  /// المايك وقع — مش «مافهمتش»، ولا بيتقفل من أول مرة: ٥ في ١٠ ثواني بس.
+  Future<void> _stumble(ListenFailed failed) async {
+    diag('Cmd: السماع وقع (${failed.started ? 'في النص' : 'في البداية'})');
+    if (!failed.started) unawaited(_onStartFailure(failed.reason));
+    if (breaker.fail()) return _cantListen(failed);
+    note = 'معلش — دوس واتكلم تاني.';
+    _rest();
+  }
+
   /// رد السحابة → نفس القارئ المحلي: الكلمات اللي رجعت بتتفهم هنا، والاسم
   /// بيتطابق على قايمة الموبايل — السحابة ما شافتهاش.
   VoiceCommand _fromCloud(CloudCommand? c) {
@@ -270,8 +341,9 @@ class CommandFlow extends ChangeNotifier {
     }
   }
 
-  /// المايك ما اشتغلش. الإذن = «كمّل بإيدك» ومش هنسأل تاني؛ أي سبب تاني =
-  /// `gen_try_hands` مرة، و«كلّمني» يختفي، والسبب للسجل والأدمن بس.
+  /// المايك اتقفل على الشاشة دي. الإذن = «كمّل بإيدك» ومش هنسأل تاني؛
+  /// المتعرّف مش موجود أو القاطع اشتغل = `gen_try_hands` مرة، و«كلّمني» يختفي،
+  /// والسبب للسجل والأدمن بس.
   Future<void> _cantListen(ListenFailed failed) async {
     if (failed.permission) {
       voice.markMicDenied();
@@ -394,8 +466,60 @@ class CommandFlow extends ChangeNotifier {
   /// التأكيد: اللي اتفهم **مكتوب كبير** و«صح كده؟» **المسجّلة** — مفيش «فهمت:
   /// …» بصوت الموبايل، ومفيش سماع لـ«أيوه»: الزرارين قدّامه، والدوسة بتكسب.
   Future<void> _askYes(String understood) async {
+    _understood = understood;
     _set(CommandPhase.confirming, understood);
     await voice.speakLine('lis_confirm');
+  }
+
+  /// **دوسة الدايرة** — نفس `onPress` بتاع `MicOrb`: والموبايل بيتكلم ← يسكت
+  /// ويفتح المايك في نفس الدوسة؛ والمايك مفتوح ← «خلصت»؛ ومستنيين «أيوه» ←
+  /// سماع واحد للرد؛ و«بفكّر…» ما بيعملش حاجة.
+  Future<void> tapMic() async {
+    if (startFailed || voice.micDenied) return;
+    switch (phase) {
+      case CommandPhase.thinking || CommandPhase.done:
+        return;
+      case CommandPhase.listening:
+        await voice.listener?.stop();
+      case CommandPhase.confirming:
+        await _listenReply();
+      case CommandPhase.idle || CommandPhase.choosing || CommandPhase.answering:
+        await start();
+    }
+  }
+
+  /// «أيوه» / «لأ» بالصوت — [classifyReply] (بورت `affirm.js`): الرفض الأول،
+  /// ومش واضح = «صح كده؟» تاني. **عمره ما ينفّذ من غير كلمة واضحة.**
+  Future<void> _listenReply() async {
+    final listener = voice.listener;
+    if (listener == null || _busy) return;
+    _busy = true;
+    try {
+      final wasSpeaking = voice.speaking;
+      await voice.stop();
+      final gen = voice.interrupts;
+      _reply = true;
+      note = null;
+      partial = '';
+      await voice.yieldToMic(settle: wasSpeaking);
+      if (_interrupted(gen)) return;
+      final text = await _hear(listener, gen);
+      if (text == null) return;
+      _set(CommandPhase.confirming, _understood);
+      _reply = false;
+      switch (classifyReply(text)) {
+        case ReplyClass.affirm:
+          await confirmYes();
+        case ReplyClass.deny:
+          await confirmNo();
+        case ReplyClass.unclear:
+          note = 'قول «أيوه» أو «لأ» — أو دوس.';
+          notifyListeners();
+          await voice.speakLine('lis_confirm');
+      }
+    } finally {
+      _busy = false;
+    }
   }
 
   /// «أيوه» — التنفيذ الوحيد. «أخدته» بيعدّي من [confirmGroup] نفسها.

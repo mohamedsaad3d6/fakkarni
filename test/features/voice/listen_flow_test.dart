@@ -1,12 +1,15 @@
 // «اتكلم» — سماع واحد لكل دوسة، والدوسة دايماً بتكسب (آيفون، ٢٦ سبتمبر ٢٠٢٦):
 // المايك كان بيتفتح بعد جملة فالكلمة الأولى بتضيع، وجلسات بتبدأ وتموت في
 // أقل من ثانية لأن السماع والأزرار بيتخانقوا، و«فهمت: …» بصوت الموبايل آلي.
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fakkarni/data/voice/speech_listener.dart';
 import 'package:fakkarni/data/voice/voice_service.dart';
 import 'package:fakkarni/domain/voice/answer_parser.dart';
+import 'package:fakkarni/domain/voice/mic_state.dart';
 import 'package:fakkarni/features/voice/listen_flow.dart';
 
 import '../../data/voice/fake_listener.dart';
@@ -156,26 +159,43 @@ void main() {
 
   // ── مفيش لفّ لوحده ──────────────────────────────────────────────────
 
-  test('سكوت ← «مافهمتش» والمايك فاضل، ومفيش سماع لوحده؛ التانية ورا بعض «كمّل بإيدك» والمايك برضه فاضل', () async {
+  test('سكوت = راحة مش عطل: ولا جملة، والمايك فاضل، ومفيش سماع لوحده', () async {
     await setUpWith(answers: [const ListenSilence(), const ListenSilence()]);
     final f = flow();
     await f.start();
-    expect(said().last, 'lis_not_understood');
-    expect(f.phase, ListenPhase.notUnderstood);
+    expect(f.phase, ListenPhase.idle);
+    expect(f.mic, MicState.idle);
+    expect(f.note, isNotNull, reason: 'سطر مكتوب هادي');
+    expect(said(), isEmpty, reason: 'السكوت ما بيتقالش عليه «مافهمتش»');
     await flush();
     expect(listener.listens, 1, reason: 'سماع واحد لكل دوسة');
-    await f.again();
-    expect(said().last, 'gen_try_hands');
+    await f.tapMic();
+    expect(listener.listens, 2);
+    expect(said(), isEmpty);
     expect(f.available, isTrue);
     expect(startFailures, isEmpty);
   });
 
-  test('عطل بعد ما السماع بدأ = تعثّرة («مافهمتش») — مش إخفا', () async {
+  test('كلام مش مفهوم ← «مافهمتش»، والتانية ورا بعض «كمّل بإيدك» — نسأل تاني، مش بنقفل', () async {
+    await setUpWith(answers: ['الجو حر', 'برضه مش ساعة']);
+    final f = flow();
+    await f.start();
+    expect(said().last, 'lis_not_understood');
+    expect(f.phase, ListenPhase.notUnderstood);
+    await f.tapMic();
+    expect(said().last, 'gen_try_hands');
+    expect(f.available, isTrue);
+  });
+
+  test('عطل بعد ما السماع بدأ = تعثّرة هادية — مش «مافهمتش» ومش إخفا', () async {
     await setUpWith(answers: [const ListenFailed('error_audio', started: true)]);
     final f = flow();
     await f.start();
-    expect(said(), ['lis_not_understood']);
+    expect(said(), isEmpty);
+    expect(f.phase, ListenPhase.idle);
+    expect(f.note, isNotNull);
     expect(f.available, isTrue);
+    expect(startFailures, isEmpty, reason: 'بدأ — مش عطل مايك للأدمن');
   });
 
   // ── المايك ما اشتغلش ────────────────────────────────────────────────
@@ -193,12 +213,38 @@ void main() {
     expect(listener.listens, 0);
   });
 
-  test('السماع ما بدأش ← نفس الحكم', () async {
+  test('السماع ما بدأش مرة ← المايك فاضل (القاطع مش أول وقعة)، والسبب للأدمن', () async {
     await setUpWith(answers: [const ListenFailed('error_listen_failed')]);
     final f = flow();
     await f.start();
-    expect(said(), ['gen_try_hands']);
+    expect(said(), isEmpty);
+    expect(f.phase, ListenPhase.idle);
+    expect(f.available, isTrue);
+    expect(startFailures, ['error_listen_failed']);
+  });
+
+  test('القاطع: ٥ وقعات في ١٠ ثواني ← المايك يتقفل على الشاشة دي، «اكتب أو دوس بدل الصوت»', () async {
+    await setUpWith(answers: List.filled(6, const ListenFailed('error_listen_failed')));
+    final now = DateTime(2026, 9, 26, 10);
+    final f = ListenFlow<SpokenTime>(
+      voice: voice,
+      parse: (h) => parseTime(h, hint: DayPartHint.morning),
+      describe: (t) => '',
+      onApply: (t) async {},
+      onStartFailure: (why) async => startFailures.add(why),
+      breaker: MicBreaker(clock: () => now),
+    );
+    for (var i = 0; i < 4; i++) {
+      await f.tapMic();
+      expect(f.available, isTrue, reason: 'وقعة ${i + 1} — لسه');
+    }
+    await f.tapMic();
+    expect(f.phase, ListenPhase.unavailable);
+    expect(f.mic, MicState.off);
+    expect(micStateLabel(f.mic), 'اكتب أو دوس بدل الصوت');
     expect(f.available, isFalse);
+    await f.tapMic();
+    expect(listener.listens, 5, reason: 'المقفول ما بيفتحش مايك');
   });
 
   test('الإذن: «محتاج إذن الميكروفون» قبل طلب النظام، والرفض بيخفي الزرار', () async {
@@ -247,5 +293,126 @@ void main() {
     final v = VoiceService(player: FakePlayer(), tts: FakeTts(), micSettle: const Duration(hours: 1));
     await v.load();
     await v.yieldToMic(settle: false).timeout(const Duration(seconds: 2));
+  });
+
+  // ── الماكينة (MicOrb بتاع jarvis-ai-finance) ─────────────────────────
+
+  test('ولا تشغيل مرتين: دوستين ورا بعض = سماع واحد', () async {
+    await setUpWith();
+    listener.hold = true;
+    final f = flow();
+    final a = f.tapMic();
+    final b = f.tapMic();
+    await listener.untilListening();
+    await f.start();
+    expect(listener.listens, 1);
+    listener.hear('تمانية');
+    await Future.wait([a, b]);
+    expect(listener.listens, 1);
+  });
+
+  test('مقاطعة بالدوسة: والموبايل بيتكلم ← يسكت ويفتح المايك في نفس الدوسة', () async {
+    await setUpWith(answers: ['تسعة']);
+    final f = flow();
+    player.holdPlayback = true;
+    unawaited(voice.speakLine('help_today'));
+    await flush();
+    expect(f.mic, MicState.speaking);
+    expect(micStateLabel(f.mic), 'برد عليك — دوس عشان تقاطعني');
+    bool? speakingAtListen;
+    listener.onListen = () => speakingAtListen = voice.speaking;
+    player.holdPlayback = false;
+    await f.tapMic();
+    expect(speakingAtListen, isFalse, reason: 'الجملة اتقطعت قبل ما المايك يتفتح');
+    expect(listener.listens, 1);
+    expect(f.phase, ListenPhase.confirming);
+  });
+
+  test('الدوسة والمايك مفتوح = «خلصت»: اللي اتسمع هو الإجابة', () async {
+    await setUpWith();
+    listener.hold = true;
+    final f = flow();
+    final run = f.tapMic();
+    await listener.untilListening();
+    expect(f.mic, MicState.listening);
+    listener.partial('تمانية ونص');
+    await f.tapMic();
+    await run;
+    expect(f.phase, ListenPhase.confirming);
+    expect(f.confirmText, 'الساعة 8:30');
+    expect(listener.listens, 1);
+  });
+
+  test('idle ← listening ← thinking ← confirming: كل مرحلة بالترتيب، ومفيش رجوع للسماع لوحده', () async {
+    await setUpWith(answers: ['تمانية']);
+    final f = flow();
+    final seen = <MicState>[];
+    f.addListener(() {
+      if (seen.isEmpty || seen.last != f.mic) seen.add(f.mic);
+    });
+    await f.start();
+    await flush();
+    expect(seen.where((m) => m != MicState.speaking), [MicState.listening, MicState.thinking, MicState.confirming]);
+    expect(listener.listens, 1);
+  });
+
+  group('«أيوه» / «لأ» بالصوت — classifyReply (affirm.js)', () {
+    test('«أيوه» ← اتطبّقت', () async {
+      await setUpWith(answers: ['تمانية ونص', 'أيوه']);
+      final f = flow();
+      await f.start();
+      await f.tapMic();
+      expect(applied, [const SpokenTime(8, 30)]);
+      expect(f.phase, ListenPhase.done);
+      expect(listener.listens, 2);
+    });
+
+    test('«لا مش كده» ← رفض (الرفض الأول) — ولا تطبيق', () async {
+      await setUpWith(answers: ['تمانية ونص', 'لا خلاص تمام كده']);
+      final f = flow();
+      await f.start();
+      await f.tapMic();
+      expect(applied, isEmpty);
+      expect(f.phase, ListenPhase.declined);
+    });
+
+    test('مش واضح ← «صح كده؟» تاني، وفاضل مستني — عمره ما يأكّد لوحده', () async {
+      await setUpWith(answers: ['تمانية ونص', 'مش عارف']);
+      final f = flow();
+      await f.start();
+      await f.tapMic();
+      expect(applied, isEmpty);
+      expect(f.phase, ListenPhase.confirming);
+      expect(f.note, contains('أيوه'));
+      expect(said(), ['lis_confirm', 'lis_confirm']);
+      await flush();
+      expect(listener.listens, 2, reason: 'ولا سماع لوحده بعد السؤال التاني');
+      await f.confirmYes();
+      expect(applied, [const SpokenTime(8, 30)], reason: 'الإجابة الأولى لسه محفوظة');
+    });
+
+    test('الدوسة و«صح كده؟» لسه بتتقال ← تقطعها وتسمع الرد (كانت بتتبلع)', () async {
+      await setUpWith(answers: ['تمانية ونص', 'أيوه']);
+      final f = flow();
+      player.holdPlayback = true;
+      final run = f.start();
+      await flush();
+      expect(f.phase, ListenPhase.confirming);
+      expect(f.mic, MicState.speaking);
+      player.holdPlayback = false;
+      await f.tapMic();
+      expect(listener.listens, 2);
+      expect(applied, [const SpokenTime(8, 30)]);
+      await run;
+    });
+
+    test('سكوت على «صح كده؟» ← فاضل مستني الرد، مش idle', () async {
+      await setUpWith(answers: ['تمانية ونص', const ListenSilence()]);
+      final f = flow();
+      await f.start();
+      await f.tapMic();
+      expect(f.phase, ListenPhase.confirming);
+      expect(f.confirmText, 'الساعة 8:30');
+    });
   });
 }

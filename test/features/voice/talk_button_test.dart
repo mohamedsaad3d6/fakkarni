@@ -65,6 +65,8 @@ void main() {
     expect(find.byKey(const ValueKey('talk-shown')), findsOneWidget);
     expect(tester.widget<Text>(find.byKey(const ValueKey('talk-shown'))).data, voiceLine('lis_not_understood'));
     expect(player.played, isEmpty, reason: 'مقفول = مكتوب مش مسموع');
-    expect(find.byKey(const ValueKey('talk-again')), findsOneWidget);
+    // «قول تاني» هي الدايرة نفسها — بكلمتها
+    expect(find.byKey(const ValueKey('mic-orb')), findsOneWidget);
+    expect(tester.widget<Text>(find.byKey(const ValueKey('mic-orb-label'))).data, 'دوس واتكلم');
   });
 }

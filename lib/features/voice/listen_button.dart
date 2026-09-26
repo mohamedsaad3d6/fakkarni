@@ -8,13 +8,15 @@ import '../../core/widgets/f_sheet.dart';
 import '../../core/widgets/primitives.dart';
 import '../../domain/voice/voice_catalog.dart';
 import 'listen_flow.dart';
+import 'mic_orb.dart';
 
 /// «🎤 اتكلم» — **على شاشة التذكير بس** («كلّمني» ليه زراره). اتشال من كل
 /// صفحات البداية (٢٦ سبتمبر ٢٠٢٦): هناك بالإيد والكتابة بس.
 ///
-/// دوسة = سماع واحد على طول (شوف [ListenFlow]): ورقة فيها مايك بينبض و
-/// «سامعك…» والكلام بيتكتب وهو بيتقال ← الكلام كبير + «صح كده؟» المسجّلة +
-/// «أيوه»/«لأ» بالإيد ← اتطبّق. أي دوسة بتقفل المايك على طول.
+/// دوسة = سماع واحد على طول (شوف [ListenFlow]): ورقة فوقها الدايرة
+/// ([MicOrb]) بكلمة حالتها، والكلام بيتكتب وهو بيتقال ← الكلام كبير + «صح
+/// كده؟» المسجّلة + «أيوه»/«لأ» بالإيد (أو الدايرة وقولها) ← اتطبّق. أي دوسة
+/// بتقفل المايك على طول، ودوسة الدايرة والموبايل بيتكلم بتقاطعه.
 ///
 /// **بيظهر لما فيه مايك في النسخة، والصوت شغّال، والإذن مش مرفوض.** من غير
 /// `AppScope` أو من غير خدمة صوت = مفيش زرار (زي «ساعدني»).
@@ -221,111 +223,67 @@ class _ListenBodyState extends State<_ListenBody> {
     final body = TextStyle(fontSize: F.minBodySize, color: F.ink, height: 1.5);
     final big = TextStyle(fontSize: F.subtitleSize, fontWeight: FontWeight.w700, color: F.ink, height: 1.5);
     Widget close() => FSecondaryButton(key: const ValueKey('listen-close'), label: 'اقفل', onPressed: _close);
-    Widget again() => FPrimaryButton(key: const ValueKey('listen-again'), label: 'اتكلم تاني', onPressed: flow.again);
+    Widget noteLine() => flow.note == null
+        ? const SizedBox.shrink()
+        : Padding(
+            padding: const EdgeInsets.only(top: F.s10),
+            child: Text(flow.note!, key: const ValueKey('listen-note'), textAlign: TextAlign.center, style: body),
+          );
     return ListenableBuilder(
-      listenable: flow,
+      // الدورة، و«بيتكلم» (الدايرة بتقول «برد عليك — دوس عشان تقاطعني»)
+      listenable: Listenable.merge([flow, flow.voice.caption]),
       builder: (context, _) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: switch (flow.phase) {
-          ListenPhase.listening => [
-              Row(
-                key: const ValueKey('listen-listening'),
-                children: [
-                  const PulsingMic(),
-                  const SizedBox(width: F.s12),
-                  Expanded(child: Text('سامعك…', style: big)),
-                ],
-              ),
-              const SizedBox(height: F.s10),
-              // الكلام وهو بيتقال
-              Text(
-                flow.partial,
-                key: const ValueKey('listen-partial'),
-                style: TextStyle(fontSize: F.subtitleSize, color: F.ink, height: 1.4),
-              ),
-              const SizedBox(height: F.gap),
-              close(),
-            ],
-          ListenPhase.confirming => [
-              Text(flow.confirmText, key: const ValueKey('listen-heard'), style: big.copyWith(fontSize: F.screenTitleSize)),
-              const SizedBox(height: F.s4),
-              Text(voiceLine('lis_confirm'), style: body),
-              const SizedBox(height: F.gap),
-              FPrimaryButton(key: const ValueKey('listen-yes'), label: 'أيوه', onPressed: flow.confirmYes),
-              const SizedBox(height: F.s10),
-              FSecondaryButton(key: const ValueKey('listen-no'), label: 'لأ', onPressed: flow.confirmNo),
-            ],
-          ListenPhase.notUnderstood => [
-              Text(voiceLine(flow.missLine), key: const ValueKey('listen-not-understood'), style: body),
-              const SizedBox(height: F.gap),
-              again(),
-              const SizedBox(height: F.s10),
-              close(),
-            ],
-          ListenPhase.declined => [
-              Text('ماشي — دوس «اتكلم تاني» وقولها تاني، أو دوس بإيدك.', key: const ValueKey('listen-declined'), style: body),
-              const SizedBox(height: F.gap),
-              again(),
-              const SizedBox(height: F.s10),
-              close(),
-            ],
-          // المايك ما اشتغلش — مش «مافهمتش». الزرار اختفى من الشاشة.
-          ListenPhase.unavailable => [
-              Text(voiceLine('gen_try_hands'), key: const ValueKey('listen-unavailable'), style: body),
-              const SizedBox(height: F.gap),
-              close(),
-            ],
-          ListenPhase.idle || ListenPhase.done => [
-              Text('ثواني…', style: body),
-              const SizedBox(height: F.gap),
-              close(),
-            ],
-        },
+        children: [
+          // الدايرة: دوسة واحدة لكل حالة — الدورة بتقرر ([ListenFlow.tapMic])
+          Center(child: MicOrb(state: flow.mic, onTap: flow.tapMic)),
+          const SizedBox(height: F.s12),
+          ...switch (flow.phase) {
+            ListenPhase.listening => [
+                // الكلام وهو بيتقال
+                Text(
+                  flow.partial,
+                  key: const ValueKey('listen-partial'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: F.subtitleSize, color: F.ink, height: 1.4),
+                ),
+                const SizedBox(height: F.gap),
+                close(),
+              ],
+            ListenPhase.confirming => [
+                Text(flow.confirmText, key: const ValueKey('listen-heard'), style: big.copyWith(fontSize: F.screenTitleSize)),
+                const SizedBox(height: F.s4),
+                Text(voiceLine('lis_confirm'), style: body),
+                noteLine(),
+                const SizedBox(height: F.gap),
+                FPrimaryButton(key: const ValueKey('listen-yes'), label: 'أيوه', onPressed: flow.confirmYes),
+                const SizedBox(height: F.s10),
+                FSecondaryButton(key: const ValueKey('listen-no'), label: 'لأ', onPressed: flow.confirmNo),
+              ],
+            ListenPhase.notUnderstood => [
+                Text(voiceLine(flow.missLine), key: const ValueKey('listen-not-understood'), style: body),
+                const SizedBox(height: F.gap),
+                close(),
+              ],
+            ListenPhase.declined => [
+                Text('ماشي — دوس المايك وقولها تاني، أو دوس بإيدك.', key: const ValueKey('listen-declined'), style: body),
+                const SizedBox(height: F.gap),
+                close(),
+              ],
+            // المايك اتقفل على الشاشة دي — الدايرة بتقول «اكتب أو دوس بدل الصوت»
+            ListenPhase.unavailable => [
+                Text(voiceLine('gen_try_hands'), key: const ValueKey('listen-unavailable'), style: body),
+                const SizedBox(height: F.gap),
+                close(),
+              ],
+            ListenPhase.idle || ListenPhase.thinking || ListenPhase.done => [
+                noteLine(),
+                const SizedBox(height: F.gap),
+                close(),
+              ],
+          },
+        ],
       ),
     );
   }
-}
-
-/// مايك بينبض — **لحظة ما المايك مفتوح بس**. «تقليل الحركة» = ثابت.
-class PulsingMic extends StatefulWidget {
-  const PulsingMic({super.key});
-
-  @override
-  State<PulsingMic> createState() => PulsingMicState();
-}
-
-class PulsingMicState extends State<PulsingMic> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
-      _c.stop();
-    } else if (!_c.isAnimating) {
-      _c.repeat(reverse: true);
-    }
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-        animation: _c,
-        builder: (context, child) => Container(
-          key: const ValueKey('listen-pulse'),
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: F.gold.withValues(alpha: 0.15 + 0.25 * _c.value),
-          ),
-          alignment: Alignment.center,
-          child: Icon(Icons.mic, size: 32, color: F.gold),
-        ),
-      );
 }

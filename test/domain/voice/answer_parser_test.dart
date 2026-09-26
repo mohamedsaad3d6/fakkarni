@@ -14,9 +14,9 @@ void main() {
     for (final s in ['', 'الساعة تمانية', 'يمكن', 'الله أعلم']) {
       test('«$s» = مش مفهوم', () => expect(parseYesNo(s), isNull));
     }
-    test('«يمكن» و«مش عارف» مش إجابة', () {
+    test('«يمكن» و«مش عارف» مش إجابة — نسأل تاني (زي affirm.js)', () {
       expect(parseYesNo('يمكن'), isNull);
-      expect(parseYesNo('مش عارف'), isFalse, reason: '«مش» أول كلمة مفهومة');
+      expect(parseYesNo('مش عارف'), isNull);
     });
   });
 
