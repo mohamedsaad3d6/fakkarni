@@ -1,6 +1,7 @@
 import 'package:flutter_tts/flutter_tts.dart';
 
 import '../../core/diagnostics.dart';
+import 'voice_pick.dart';
 import 'voice_service.dart';
 
 /// صوت الموبايل — **الملف الوحيد اللي بيستورد `flutter_tts`.**
@@ -26,13 +27,25 @@ class DeviceTts implements VoiceTts {
         ],
         IosTextToSpeechAudioMode.spokenAudio,
       );
-      final langs = await _tts.getLanguages;
-      final available = langs is List ? langs.map((l) => l.toString()).toList() : const <String>[];
-      final pick = available.firstWhere(
-        (l) => l.toLowerCase().replaceAll('_', '-') == 'ar-eg',
-        orElse: () => available.firstWhere((l) => l.toLowerCase().startsWith('ar'), orElse: () => 'ar'),
-      );
-      await _tts.setLanguage(pick);
+      // أحسن صوت عربي متسطّب (premium ← enhanced ← العادي) — [pickArabicVoice]
+      final raw = await _tts.getVoices;
+      final voices = [
+        if (raw is List)
+          for (final v in raw)
+            if (v is Map) {for (final e in v.entries) '${e.key}': '${e.value}'},
+      ];
+      final voice = pickArabicVoice(voices);
+      if (voice != null) {
+        await _tts.setVoice({
+          'name': voice['name'] ?? '',
+          'locale': voice['locale'] ?? '',
+          'identifier': ?voice['identifier'],
+        });
+        diag('Voice: صوت الموبايل ${voice['name']} (${voice['locale']}، ${voice['quality'] ?? '؟'})');
+      } else {
+        await _tts.setLanguage('ar');
+        diag('Voice: مفيش صوت عربي متسطّب — لغة «ar» والنظام يختار');
+      }
     } catch (e) {
       diag('Voice: تجهيز صوت الموبايل ($e)');
     }
@@ -41,7 +54,8 @@ class DeviceTts implements VoiceTts {
   @override
   Future<void> speak(String text, {required double rate, required double volume}) async {
     await _prepare();
-    await _tts.setSpeechRate(rate);
+    // أبطأ شوية — الردود بتتولّد، ومش متسجّلة
+    await _tts.setSpeechRate(rate * ttsAnswerRateFactor);
     await _tts.setVolume(volume);
     await _tts.speak(text, focus: true);
   }

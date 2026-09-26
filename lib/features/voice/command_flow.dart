@@ -117,6 +117,16 @@ class CommandFlow extends ChangeNotifier {
 
   /// الجملة اللي على الشاشة دلوقتي — نفس اللي بيتقال.
   String shown = '';
+
+  /// الكلام وهو بيتقال — بيتكتب في الورقة لحظة بلحظة.
+  String partial = '';
+
+  /// «تقدر تقولّي مثلاً…» — **مكتوبة** تحت «سامعك…» أول مرة خالص (ما بتتقالش:
+  /// ولا جملة قبل المايك).
+  String? hint;
+
+  /// سماعات اتفتحت — دوسة واحدة = سماع واحد.
+  int sessions = 0;
   VoiceCommand? command;
   List<DoseCandidate> candidates = const [];
   DoseCandidate? chosen;
@@ -126,7 +136,6 @@ class CommandFlow extends ChangeNotifier {
   int failures = 0;
   bool _busy = false;
   bool _disposed = false;
-  bool _retry = false;
 
   bool get available => voice.listener != null && !voice.micDenied && !startFailed;
 
@@ -160,6 +169,7 @@ class CommandFlow extends ChangeNotifier {
     if (listener == null || _busy) return;
     _busy = true;
     try {
+      final wasSpeaking = voice.speaking;
       await voice.stop();
       final gen = voice.interrupts;
       if (!await listener.hasPermission()) {
@@ -172,29 +182,37 @@ class CommandFlow extends ChangeNotifier {
         await _cantListen(failed);
         return;
       }
+      // أول مرة خالص: «تقدر تقولّي مثلاً…» **مكتوبة** تحت «سامعك…» — مرة
+      // واحدة في عمر التنزيلة، ومن غير ما تتقال قبل المايك
+      hint = null;
       if (!voice.cmdHintDone) {
-        // أول مرة خالص: «تقدر تقولّي مثلاً…» — مرة واحدة في عمر التنزيلة
         await voice.markCmdHintDone();
-        await _say('cmd_hint', phase: CommandPhase.listening);
-        if (_interrupted(gen)) return;
+        hint = voiceLine('cmd_hint');
       }
-      await _round(gen);
+      await _round(gen, settle: wasSpeaking);
     } finally {
       _busy = false;
     }
   }
 
-  Future<void> _round(int gen) async {
+  Future<void> _round(int gen, {bool settle = false}) async {
     final listener = voice.listener!;
     command = null;
     candidates = const [];
     chosen = null;
     prefill = null;
-    await _say('lis_listening', phase: CommandPhase.listening);
+    partial = '';
+    // **الدوسة ← المايك على طول**: مفيش جملة قبله؛ النغمة من المتعرّف نفسه
+    await voice.yieldToMic(settle: settle);
     if (_interrupted(gen)) return;
-    await voice.yieldToMic();
-    final result = await listener.listen();
-    if (_interrupted(gen)) return;
+    sessions++;
+    _set(CommandPhase.listening, 'سامعك…');
+    final result = await listener.listen(onPartial: (t) {
+      if (phase != CommandPhase.listening || _disposed) return;
+      partial = t;
+      notifyListeners();
+    });
+    if (_interrupted(gen) || phase != CommandPhase.listening) return; // دوسة كسبت
     // المايك ما اشتغلش ≠ «مافهمتش»؛ اشتغل ووقع في النص = تعثّرة
     if (result is ListenFailed && (!result.started || result.permission)) return _cantListen(result);
     if (result is ListenFailed) return _fail(gen);
@@ -370,32 +388,14 @@ class CommandFlow extends ChangeNotifier {
 
   Future<void> _confirm(DoseCandidate c, int gen) async {
     chosen = c;
-    await _sayText('فهمت: أخدت ${c.dose.medicationName} بتاع الساعة ${voiceTime(c.dose.scheduledAt)}.', phase: CommandPhase.confirming);
-    if (_interrupted(gen)) return;
-    await _askYes(gen);
+    await _askYes('أخدت ${c.dose.medicationName} بتاع الساعة ${voiceTime(c.dose.scheduledAt)}');
   }
 
-  Future<void> _askYes(int gen) async {
-    await _say('lis_confirm');
-    if (_interrupted(gen)) return;
-    await voice.yieldToMic();
-    final heard = await voice.listener!.listen();
-    if (_interrupted(gen)) return;
-    // «أيوه» ما بقتش تتسمع — الأزرار فاضلة قدّامه، مفيش «مافهمتش»
-    final answer = heard is ListenHeard ? heard.text : null;
-    if (_retry) {
-      _retry = false;
-      return _round(gen);
-    }
-    if (phase != CommandPhase.confirming) return;
-    switch (answer == null ? null : parseYesNo(answer)) {
-      case true:
-        await confirmYes();
-      case false:
-        await confirmNo();
-      case null:
-        break; // الزرارين قدّامه
-    }
+  /// التأكيد: اللي اتفهم **مكتوب كبير** و«صح كده؟» **المسجّلة** — مفيش «فهمت:
+  /// …» بصوت الموبايل، ومفيش سماع لـ«أيوه»: الزرارين قدّامه، والدوسة بتكسب.
+  Future<void> _askYes(String understood) async {
+    _set(CommandPhase.confirming, understood);
+    await voice.speakLine('lis_confirm');
   }
 
   /// «أيوه» — التنفيذ الوحيد. «أخدته» بيعدّي من [confirmGroup] نفسها.
@@ -403,7 +403,8 @@ class CommandFlow extends ChangeNotifier {
     if (phase != CommandPhase.confirming) return;
     final cmd = command;
     _set(CommandPhase.done);
-    await voice.listener?.stop();
+    // الدوسة بتكسب: «صح كده؟» والمايك بيقفوا على طول
+    unawaited(voice.stop());
     if (cmd?.intent == CommandIntent.markTaken && chosen != null) {
       final c = chosen!;
       await confirmGroup(services, c.routineDay, [c.dose]);
@@ -420,13 +421,14 @@ class CommandFlow extends ChangeNotifier {
     if (phase != CommandPhase.confirming && phase != CommandPhase.choosing) return;
     chosen = null;
     prefill = null;
-    await voice.listener?.stop();
+    await voice.stop();
     await _say('cmd_cancelled', phase: CommandPhase.answering);
   }
 
   /// «قول تاني» بعد «مافهمتش».
   Future<void> again() => start();
 
+  /// «اقفل» — المايك بيقف على طول.
   Future<void> cancel() async {
     _set(CommandPhase.idle, '');
     await voice.stop();
@@ -445,9 +447,7 @@ class CommandFlow extends ChangeNotifier {
     );
     final what = purpose != null ? 'دوا ${purpose.label}' : (cmd.medWords == null ? 'دوا' : 'دوا ${cmd.medWords}');
     final when = _timingWords(cmd);
-    await _sayText('فهمت: تضيف $what${when.isEmpty ? '' : ' $when'} — وهتراجعه وتحفظه بإيدك.', phase: CommandPhase.confirming);
-    if (_interrupted(gen)) return;
-    await _askYes(gen);
+    await _askYes('تضيف $what${when.isEmpty ? '' : ' $when'} — وهتراجعه وتحفظه بإيدك');
   }
 
   static MedicationPurpose? _purposeFromWords(String? words) {
@@ -516,12 +516,6 @@ class CommandFlow extends ChangeNotifier {
     if (cmd.everyHours != null) parts.add('كل ${arabicNumber(cmd.everyHours!)} ساعات');
     if (cmd.once) parts.add('مرة واحدة');
     return parts.join('، ');
-  }
-
-  /// «لأ، قول تاني» بالإيد وإحنا لسه بنسمع «أيوه».
-  Future<void> retry() async {
-    _retry = true;
-    await voice.listener?.stop();
   }
 
   @override

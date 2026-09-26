@@ -310,7 +310,11 @@ class VoiceService extends ChangeNotifier {
   /// خلصت (اللي بينده استناها) ← المشغّل والـTTS بيقفوا ← **المشغّل بيتساب**
   /// ← الجلسة بتتسلّم ← نفَس ← المتعرّف ياخد الجلسة (`playAndRecord`). وبعد
   /// السماع، أول جملة بتعيد ضبط الجلسة للتشغيل ([VoiceAudioFocus.begin]).
-  Future<void> yieldToMic() async {
+  ///
+  /// [settle]: النفَس بعد التسليم — **بس لو كان فيه حاجة بتتقال** لحظة
+  /// الدوسة. من غيرها المايك بيتفتح على طول (الكلمة الأولى كانت بتضيع في
+  /// الـ٢٥٠ ملّي دي: «محمد سعد» ← «سعد»).
+  Future<void> yieldToMic({bool settle = true}) async {
     await _stopSpeaking();
     try {
       await player.release();
@@ -318,7 +322,7 @@ class VoiceService extends ChangeNotifier {
       diag('Voice: سيب المشغّل وقع ($e)');
     }
     diag('Listen: الجلسة اتسلّمت للمايك (المشغّل اتساب، الـTTS وقف)');
-    if (micSettle > Duration.zero) await Future<void>.delayed(micSettle);
+    if (settle && micSettle > Duration.zero) await Future<void>.delayed(micSettle);
   }
 
   Future<void> _stopSpeaking() async {

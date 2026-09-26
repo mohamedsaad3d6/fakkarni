@@ -108,11 +108,9 @@ const placement = <String, Set<String>>{
     // + «اتكلم» لما المايك ما يشتغلش (مش الإذن) — مرة، والزرار بيختفي
     'gen_try_hands': {'features/medication/scan_package_screen.dart', 'features/scan/scan_prescription_screen.dart', 'features/voice/command_flow.dart', 'features/voice/listen_button.dart', 'features/voice/listen_flow.dart'},
     'gen_goodbye': {'features/voice/voice_settings_screen.dart'},
-    'lis_intro': {'features/voice/listen_button.dart'},
-    // الورقة بتكتب نفس الجملة من الكتالوج (listen_button) — مرة، والترجمة اللي تحت ساكتة
-    'lis_listening': {'features/voice/listen_button.dart', 'features/voice/listen_flow.dart', 'features/voice/command_flow.dart'},
     'lis_not_understood': {'features/voice/listen_flow.dart', 'features/voice/command_flow.dart'},
-    'lis_confirm': {'features/voice/listen_flow.dart', 'features/voice/command_flow.dart'},
+    // «صح كده؟» المسجّلة بتتقال من الدورتين، ومكتوبة تحت الكلام الكبير في الورقتين
+    'lis_confirm': {'features/voice/listen_flow.dart', 'features/voice/command_flow.dart', 'features/voice/listen_button.dart', 'features/voice/talk_button.dart'},
     'lis_mic_permission': {'features/voice/listen_flow.dart', 'features/voice/command_flow.dart'},
     'lis_mic_denied': {'features/voice/listen_flow.dart', 'features/voice/command_flow.dart'},
     // «كلّمني» — كل جمل الأوامر في الدورة الواحدة
@@ -304,5 +302,22 @@ void main() {
     // زي screenTest: شجرة فاضية تصرّف مؤقّتات drift قبل ما الاختبار يقفل
     await tester.pumpWidget(const SizedBox.shrink());
     await wait(2);
+  });
+
+  test('المايك في مكانين بس: شاشة التذكير («اتكلم») و«كلّمني» — ومفيش مايك في البداية', () {
+    final listen = {
+      for (final e in src.entries)
+        if (e.value.contains('ListenButton<') && e.key != 'features/voice/listen_button.dart') e.key,
+    };
+    expect(listen, {'features/reminder/reminder_screen.dart'});
+    final talk = {
+      for (final e in src.entries)
+        if (e.value.contains('TalkButton(') && e.key != 'features/voice/talk_button.dart') e.key,
+    };
+    expect(talk, {'features/today/today_screen.dart', 'features/elder/elder_home_screen.dart'});
+    for (final f in src.keys.where((k) => k.startsWith('features/onboarding/') || k.startsWith('features/entry/'))) {
+      expect(src[f], isNot(contains('ListenButton')), reason: f);
+      expect(src[f], isNot(contains('listen_button.dart')), reason: f);
+    }
   });
 }

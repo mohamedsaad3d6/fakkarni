@@ -14,8 +14,6 @@ import 'package:fakkarni/data/repositories/routine_repository.dart';
 import 'package:fakkarni/data/services/reminder_scheduler.dart';
 import 'package:fakkarni/data/voice/voice_service.dart';
 import 'package:fakkarni/features/entry/entry_screen.dart';
-import 'package:fakkarni/core/widgets/primitives.dart';
-import 'package:fakkarni/domain/scheduling/day_routine.dart';
 import 'package:fakkarni/features/onboarding/routine_onboarding_screen.dart';
 
 import '../../data/voice/fake_listener.dart';
@@ -172,43 +170,25 @@ void main() {
     expect(player.played, isEmpty);
   });
 
-  testWidgets('المايك في البداية: الاسم والجنس والسن والصحيان بالصوت — بنفس سكّة الإيد، وlis_intro مرة بعد جملة الصفحة', (tester) async {
-    // الاسم حقل حر: اللي اتقال بيتكتب زي ما هو (مفيش قارئ بيشيل «اسمي»)
-    await setUpWith(voiceOn: true, answers: ['أحمد', 'أيوه', 'ست', 'أيوه', 'خمسة وسبعين', 'أيوه', 'سبعة ونص', 'أيوه']);
+  testWidgets('مفيش «اتكلم» في البداية خالص — الاسم والجنس والسن والمواعيد بالإيد والكتابة بس', (tester) async {
+    await setUpWith(voiceOn: true, answers: const []);
     await pump(tester, const RoutineOnboardingScreen());
-    expect(find.byKey(const ValueKey('listen-name')), findsOneWidget);
-    expect(said(), ['onb_name', 'lis_intro'], reason: '«دلوقتي تقدر تكلّمني» بعد جملة الصفحة');
-
-    await tester.tap(find.byKey(const ValueKey('listen-name')));
+    expect(find.text('اتكلم'), findsNothing, reason: 'صفحة الاسم');
+    expect(find.text('ساعدني'), findsOneWidget, reason: 'جملة الصفحة فاضلة');
+    await tester.enterText(find.byType(TextField), 'أحمد');
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(TextField, 'أحمد'), findsOneWidget);
     await tap(tester, 'كمّل');
-
-    expect(find.text('راجل ولا ست؟'), findsOneWidget, reason: 'الصفحة التانية اتفتحت');
-    expect(find.byKey(const ValueKey('listen-gender')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('listen-gender')));
-    await tester.pumpAndSettle();
-    expect(tester.widget<AnchorChip>(find.byKey(const ValueKey('sex-f'))).selected, isTrue);
+    expect(find.text('اتكلم'), findsNothing, reason: 'صفحة الجنس');
+    await tap(tester, 'راجل');
     await tap(tester, 'كمّل');
-
-    await tester.tap(find.byKey(const ValueKey('listen-age')));
-    await tester.pumpAndSettle();
-    expect(find.text('سنّك ٧٥ سنة'), findsOneWidget);
+    expect(find.text('اتكلم'), findsNothing, reason: 'صفحة السن');
     await tap(tester, 'كمّل');
-
-    expect(find.byKey(const ValueKey('listen-wake')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('listen-wake')));
-    await tester.pumpAndSettle();
-    expect(find.text('٧:٣٠ ص'), findsOneWidget, reason: 'البكرة اتحرّكت للساعة — و«تمام» لسه بإيده');
     for (var i = 0; i < 5; i++) {
+      expect(find.text('اتكلم'), findsNothing, reason: 'سؤال المواعيد ${i + 1}');
       await tap(tester, 'تمام');
     }
-    final row = (await services.routines.getPatient(services.patientId))!;
-    expect(row.name, 'أحمد');
-    expect(row.age, 75);
-    final routine = (await services.routines.getRoutine(services.patientId))!;
-    expect(routine.wake, MinuteOfDay.hm(7, 30));
-    expect(said().where((id) => id == 'lis_intro'), hasLength(1));
+    expect(listener!.listens, 0);
+    expect(said(), isNot(contains('lis_intro')));
   });
 
   testWidgets('من غير مايك في النسخة = مفيش زرار «اتكلم» في البداية', (tester) async {

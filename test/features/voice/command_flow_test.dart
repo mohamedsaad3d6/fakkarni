@@ -96,18 +96,23 @@ void main() {
       (await h.services.events.watchDay(aug31).first).firstWhere((d) => d.medicationName == name).state;
 
   group('أخدت الدوا', () {
-    test('«أخدت الدوا» وجرعة واحدة مستنية → «فهمت» → «أيوه» → نفس سكّة الزرار: الصف والإلغاء و«سجّلت»', () async {
+    test('«أخدت الدوا» وجرعة واحدة مستنية → مكتوبة كبير + «صح كده؟» المسجّلة → دوسة «أيوه» → نفس سكّة الزرار', () async {
       await seed('Concor');
       await schedule();
       final at = DateTime(2026, 8, 31, 20);
       final f = await flowWith(['أخدت الدوا', 'أيوه']);
       await f.start();
+      expect(f.phase, CommandPhase.confirming);
+      expect(f.shown, contains('أخدت Concor'));
+      expect(tts.spoken, isEmpty, reason: '«فهمت: …» بصوت الموبايل اتشالت — كانت آلية');
+      expect(listener.listens, 1, reason: '«أيوه» بالإيد — مفيش سماع تاني لوحده');
+      await f.confirmYes();
       expect(f.phase, CommandPhase.done);
-      expect(tts.spoken.first, contains('فهمت: أخدت Concor'));
       expect(await stateOf('Concor'), DoseState.taken);
       expect(h.sink.cancelled, containsAll([notificationIdFor(at), escalationIdFor(at, EscalationRung.first), repeatIdFor(at, 0)]),
           reason: 'القاعدة الخامسة — نفس confirmGroup');
-      expect(said(), containsAllInOrder(['lis_listening', 'lis_confirm', 'help_confirm_done']));
+      expect(said(), containsAllInOrder(['lis_confirm', 'help_confirm_done']));
+      expect(said(), isNot(contains('lis_listening')), reason: 'ولا جملة قبل المايك');
     });
 
     test('من غير «أيوه» مفيش كتابة — والزرار بالإيد بيكتب', () async {
@@ -126,7 +131,9 @@ void main() {
       await schedule();
       final f = await flowWith(['أخدت الدوا', 'لأ']);
       await f.start();
+      await f.confirmNo();
       expect(f.phase, CommandPhase.answering);
+      expect(listener.listens, 1, reason: 'مفيش سماع بيبدأ لوحده بعد دوسة');
       expect(said().last, 'cmd_cancelled');
       expect(await stateOf('Concor'), DoseState.pending);
       expect(h.sink.cancelled, isEmpty);
@@ -137,8 +144,9 @@ void main() {
       await seed('Glucophage', purpose: MedicationPurpose.sugar);
       await schedule();
       final reader = FakeReader();
-      final f = await flowWith(['أخدت دوا الضغط', 'أيوه'], reader: reader);
+      final f = await flowWith(['أخدت دوا الضغط'], reader: reader);
       await f.start();
+      await f.confirmYes();
       expect(await stateOf('Concor'), DoseState.taken);
       expect(await stateOf('Glucophage'), isNot(DoseState.taken));
       expect(reader.transcripts, isEmpty, reason: 'المحلي فهم');
@@ -154,6 +162,8 @@ void main() {
       expect(f.candidates.map((c) => c.dose.medicationName), containsAll(['Concor', 'Glucophage']));
       expect(await stateOf('Concor'), DoseState.pending);
       await f.choose(f.candidates.firstWhere((c) => c.dose.medicationName == 'Glucophage'));
+      expect(f.phase, CommandPhase.confirming);
+      await f.confirmYes();
       expect(await stateOf('Glucophage'), DoseState.taken);
       expect(await stateOf('Concor'), isNot(DoseState.taken));
     });
@@ -216,11 +226,13 @@ void main() {
 
   group('ضيفلي دوا', () {
     test('«ضيفلي دوا الضغط الصبح بعد الفطار» → «فهمت» → «أيوه» → الفورم متعبّي، **وولا صف اتكتب**', () async {
-      final f = await flowWith(['ضيفلي دوا الضغط الصبح بعد الفطار', 'أيوه']);
+      final f = await flowWith(['ضيفلي دوا الضغط الصبح بعد الفطار']);
       await f.start();
+      expect(f.shown, contains('تضيف دوا ضغط'));
+      expect(f.shown, contains('بعد الفطار'));
+      expect(tts.spoken, isEmpty);
+      await f.confirmYes();
       expect(f.phase, CommandPhase.done);
-      expect(tts.spoken.first, contains('فهمت: تضيف دوا ضغط'));
-      expect(tts.spoken.first, contains('بعد الفطار'));
       expect(opened, hasLength(1));
       expect(opened.single.purpose, MedicationPurpose.pressure);
       expect(opened.single.timings, [const AnchorTiming(DayAnchor.breakfast, 30)]);
@@ -230,8 +242,9 @@ void main() {
 
     test('رجع من الفورم من غير حفظ → مفيش «عملتها»', () async {
       saveResult = false;
-      final f = await flowWith(['ضيفلي دوا اسمه زنك مرتين في اليوم', 'أيوه']);
+      final f = await flowWith(['ضيفلي دوا اسمه زنك مرتين في اليوم']);
       await f.start();
+      await f.confirmYes();
       expect(opened.single.name, 'اسمه زنك');
       expect(opened.single.timings, [const AnchorTiming(DayAnchor.breakfast, -30), const AnchorTiming(DayAnchor.dinner, -30)]);
       expect(said().where((s) => s == 'cmd_done'), isEmpty);
@@ -252,11 +265,12 @@ void main() {
       await schedule();
       final reader = FakeReader(result: const CloudReadResult(command: CloudCommand(intent: 'mark_taken', medNameAsSpoken: null)));
       var used = 0;
-      final f = await flowWith(['خلصت الحباية بتاعتي', 'أيوه'], reader: reader, onCloudUsed: () => used++);
+      final f = await flowWith(['خلصت الحباية بتاعتي'], reader: reader, onCloudUsed: () => used++);
       await f.start();
+      await f.confirmYes();
       expect(reader.transcripts, ['خلصت الحباية بتاعتي'], reason: 'المحلي ما فهمش — والكلام المكتوب بس هو اللي راح');
       expect(await stateOf('Concor'), DoseState.taken);
-      expect(said(), containsAllInOrder(['lis_listening', 'cmd_thinking', 'lis_confirm', 'help_confirm_done']));
+      expect(said(), containsAllInOrder(['cmd_thinking', 'lis_confirm', 'help_confirm_done']));
       expect(used, 1);
     });
 
@@ -295,19 +309,56 @@ void main() {
       final reader = FakeReader(
           result: const CloudReadResult(
               command: CloudCommand(intent: 'add_med', medNameAsSpoken: 'السكر', timingWords: 'بعد الغدا', patternWords: null)));
-      final f = await flowWith(['xyz', 'أيوه'], reader: reader);
+      final f = await flowWith(['xyz'], reader: reader);
       await f.start();
+      await f.confirmYes();
       expect(opened.single.purpose, MedicationPurpose.sugar);
       expect(opened.single.timings, [const AnchorTiming(DayAnchor.lunch, 30)]);
     });
   });
 
-  test('أول دوسة خالص: «تقدر تقولّي مثلاً…» مرة واحدة', () async {
+  test('أول دوسة خالص: «تقدر تقولّي مثلاً…» **مكتوبة** تحت «سامعك…» — ما بتتقالش قبل المايك', () async {
     SharedPreferences.setMockInitialValues({VoiceService.enabledKey: true});
-    final f = await flowWith(['الجو حر']);
-    await f.start();
-    expect(said().first, 'cmd_hint');
+    final f = await flowWith(const []);
+    listener.hold = true;
+    final run = f.start();
+    await listener.untilListening();
+    expect(f.phase, CommandPhase.listening);
+    expect(f.shown, 'سامعك…');
+    expect(f.hint, voiceLine('cmd_hint'));
+    expect(said(), isEmpty, reason: 'ولا جملة قبل المايك');
     expect(voice.cmdHintDone, isTrue);
+    listener.hear(null);
+    await run;
+  });
+
+  test('الكلام بيتكتب وهو بيتقال', () async {
+    final f = await flowWith(const []);
+    listener.hold = true;
+    final run = f.start();
+    await listener.untilListening();
+    listener.partial('أخدت');
+    expect(f.partial, 'أخدت');
+    listener.hear(null);
+    await run;
+  });
+
+  test('الدوسة بتكسب: «أيوه» و«صح كده؟» لسه بتتقال → اتكتبت على طول والجملة وقفت', () async {
+    await seed('Concor');
+    await schedule();
+    final f = await flowWith(['أخدت الدوا']);
+    player.holdPlayback = true;
+    final run = f.start();
+    for (var i = 0; i < 80 && f.phase != CommandPhase.confirming; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(f.phase, CommandPhase.confirming);
+    expect(voice.speaking, isTrue);
+    player.holdPlayback = false;
+    await f.confirmYes();
+    expect(await stateOf('Concor'), DoseState.taken);
+    await run;
+    expect(f.sessions, 1, reason: 'سماع واحد لكل دوسة');
   });
 
   test('الصوت مقفول: نفس الجمل مكتوبة على الشاشة، ومفيش تسجيل بيتقال', () async {

@@ -1,6 +1,4 @@
-import '../../domain/voice/answer_parser.dart';
 import '../voice/help_button.dart';
-import '../voice/listen_button.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kDebugMode;
@@ -829,14 +827,6 @@ class _MedicineRow extends StatelessWidget {
                   child: Text('اشتريته؟', style: TextStyle(fontSize: F.minTextSize, fontWeight: FontWeight.w700, color: F.ink)),
                 ),
                 const SizedBox(width: F.s8),
-                // «أيوه» / «لسه» بالصوت — نفس setBought بتاع الشريحتين
-                ListenButton<bool>(
-                  tag: 'bought-$index',
-                  parse: parseYesNo,
-                  describe: (yes) => yes ? 'اشتريته' : 'لسه',
-                  onApply: (yes) async => setBought(yes),
-                ),
-                const SizedBox(width: F.s6),
                 const HelpButton('help_bought'),
               ],
             ),

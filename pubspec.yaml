@@ -158,6 +158,8 @@ flutter:
   assets:
     # تسجيلات «الرفيق الصوتي» — ٤٦ ملف، صوت راجل مصري، بتاعتنا
     - assets/voices/
+    # نغمة «سامعك» — speech_to_text على iOS بيشغّلها بنفسه لحظة فتح المايك
+    - assets/sounds/
 
   # assets:
   #   - images/a_dot_burr.jpeg

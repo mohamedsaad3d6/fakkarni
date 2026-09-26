@@ -5,62 +5,57 @@ import 'package:flutter/foundation.dart';
 import '../../data/voice/listen_health.dart';
 import '../../data/voice/speech_listener.dart';
 import '../../data/voice/voice_service.dart';
-import '../../domain/voice/answer_parser.dart';
 
 /// مراحل السماع — الشاشة بترسمها، والاختبار بيقراها.
 enum ListenPhase {
   idle,
 
-  /// «اتكلم، أنا سامعك» — المايك مفتوح.
+  /// المايك مفتوح: مايك بينبض، «سامعك…»، والكلام بيتكتب وهو بيتقال
+  /// ([ListenFlow.partial]).
   listening,
 
-  /// «فهمت: …» + «صح كده؟» — مستني «أيوه» (بالصوت أو بالإيد).
+  /// الكلام اللي اتفهم مكتوب كبير، و«صح كده؟» **المسجّلة** — «أيوه»/«لأ»
+  /// **بالإيد**.
   confirming,
 
-  /// «معلش، مافهمتش» — المايك **اشتغل** وما سمعش حاجة مفهومة (أو وقع في
-  /// النص). بيقدر يقول تاني أو يدوس بإيده؛ التانية ورا بعض «كمّل بإيدك»
-  /// والمايك فاضل ([missLine]).
+  /// «معلش، مافهمتش» — المايك اشتغل وما سمعش حاجة مفهومة. «اتكلم تاني»
+  /// دوسة جديدة؛ التانية ورا بعض «كمّل بإيدك» ([ListenFlow.missLine]).
   notUnderstood,
 
+  /// «لأ» — مستني دوسة «اتكلم تاني» أو «اقفل». **مفيش سماع لوحده.**
+  declined,
+
   /// المايك **ما اشتغلش أصلاً** (مش الإذن): «كمّل بإيدك» مرة، والزرار
-  /// بيختفي من الشاشة دي. عمرها ما تتقال «مافهمتش».
+  /// بيختفي من الشاشة دي.
   unavailable,
 
   /// اتطبّقت.
   done,
 }
 
-/// سؤال واحد بالصوت: اسمع ← افهم ← قول اللي فهمته ← «صح كده؟» ← طبّق.
+/// **سماع واحد لكل دوسة، والدوسة دايماً بتكسب** (آيفون، ٢٦ سبتمبر ٢٠٢٦):
+/// المايك كان بيتفتح بعد جملة «اتكلم، أنا سامعك» بـ٢٥٠ ملّي فالكلمة الأولى
+/// بتضيع، وجلسات بتبدأ وتموت في أقل من ثانية لأن السماع والأزرار بيتخانقوا،
+/// و«أيوه» بالإيد ما كانتش بتكسب على طول، و«فهمت: …» بصوت الموبايل آلي.
 ///
-/// **التطبيق بيعدّي من نفس السكّة بتاعة الزرار** ([onApply] هي الدالة اللي
-/// الزرار بيندهها) — الصوت مش سكّة تانية للكتابة. و**مفيش تطبيق من غير
-/// تأكيد**: [confirmYes] بس هي اللي بتنده [onApply]، سواء جات من «أيوه»
-/// مسموعة أو مدووسة.
+/// - **الدوسة ← المايك على طول**: مفيش جملة قبله. النغمة الهادية بتيجي من
+///   المتعرّف نفسه لحظة الفتح (`assets/sounds/speech_to_text_listening.m4r`)،
+///   والشاشة بتقول «سامعك…» وبتكتب الكلام وهو بيتقال.
+/// - **التأكيد بالإيد بس**: الكلام اللي اتفهم مكتوب كبير و«صح كده؟» المسجّلة
+///   (`lis_confirm`) — مفيش سماع لـ«أيوه» ومفيش «فهمت: …» بصوت الموبايل.
+/// - **أي دوسة بتوقّف المايك على طول وبتتطبّق** ([confirmYes] / [confirmNo] /
+///   [cancel])، و**ولا سماع بيبدأ لوحده بعدها** — «اتكلم تاني» دوسة جديدة.
+/// - وقعة في البداية ← «كمّل بإيدك» مرة والزرار يختفي؛ سكوت ← «مافهمتش»؛
+///   التانية ورا بعض ← «كمّل بإيدك» والمايك فاضل.
 ///
-/// **تلات نتايج للسماع، ومش بيتلخبطوا** (آيفون، ٢٦ سبتمبر ٢٠٢٦ — «مافهمتش»
-/// كانت بتطلع فوراً والمايك عمره ما اتفتح):
-/// - كلام → بيتفهم؛
-/// - سكوت → «مافهمتش، قول تاني»؛
-/// - **السماع ما بدأش** → لو الإذن: `lis_mic_denied`؛ غير كده `gen_try_hands`
-///   مرة والزرار بيختفي من الشاشة، والسبب التقني بيتكتب `Listen:` في السجل
-///   وبيطلع للأدمن ([recordListenProblem]) — المريض ما بيشوفوش.
-///
-/// **حقل كلام حر** ([ask] + [preview]): الكلام المسموع بيتكتب في الحقل على
-/// طول، والسؤال بيتقال بصوت الموبايل («اسمك أحمد، صح كده؟»)؛ «لأ» بترجّع
-/// اللي كان مكتوب ([revert]) وبتسمع تاني.
-///
-/// **تنبيه الجرعة بيكسب**: كل خطوة بتقارن [VoiceService.interrupts] قبل
-/// وبعد؛ أي `stop()` من برّه (إشعار، شاشة اتقفلت، لمسة) بيرجّع الكل
-/// لـ[ListenPhase.idle] في صمت — من غير «مافهمتش» على حاجة إحنا اللي قطعناها.
+/// **التطبيق بيعدّي من نفس السكّة بتاعة الزرار** ([onApply]). **تنبيه الجرعة
+/// بيكسب**: `stop()` من برّه بيرجّع الكل لـidle في صمت.
 class ListenFlow<T> extends ChangeNotifier {
   ListenFlow({
     required this.voice,
     required this.parse,
     required this.describe,
     required this.onApply,
-    this.ask,
-    this.preview,
-    this.revert,
     this.force = false,
     this.autoApply = true,
     Future<void> Function(String reason)? onStartFailure,
@@ -69,63 +64,42 @@ class ListenFlow<T> extends ChangeNotifier {
   final VoiceService voice;
   final T? Function(String heard) parse;
 
-  /// «الساعة ٨ الصبح» — اللي بيتقال قبل «صح كده؟».
+  /// اللي بيتكتب كبير وقت التأكيد («أخدته»، «الساعة ٨ الصبح»).
   final String Function(T value) describe;
   final Future<void> Function(T value) onApply;
-
-  /// سؤال التأكيد كامل بصوت الموبايل («اسمك أحمد، صح كده؟») — بداله
-  /// «فهمت: …» + `lis_confirm`. للحقول الحرّة.
-  final String Function(T value)? ask;
-
-  /// الكلام المسموع بيتكتب في الحقل **قبل** «أيوه» — حقل حر بس، وهو لسه
-  /// قابل للتعديل، و«كمّل» لسه بإيده.
-  final void Function(T value)? preview;
-
-  /// «لأ» أو قفل من غير «أيوه» — الحقل بيرجع زي ما كان.
-  final VoidCallback? revert;
 
   /// المقدمة: الصوت لسه ما اتشغّلش، والجمل بتتقال برضه.
   final bool force;
 
   /// «أيوه» بتطبّق على طول. الزرار بيحطّها false: الورقة بتتقفل الأول وبعدين
-  /// بيطبّق ([confirmed]) — عشان شاشة بتقفل نفسها بعد التطبيق (التذكير) ما
-  /// تقفلش الورقة بدالها.
+  /// بيطبّق ([confirmed]).
   final bool autoApply;
 
   final Future<void> Function(String reason) _onStartFailure;
 
-  /// اللي اتأكّد ولسه ما اتطبّقش (لما [autoApply] false).
   T? confirmed;
-
   ListenPhase phase = ListenPhase.idle;
   T? heard;
   String? heardText;
+
+  /// الكلام وهو بيتقال — بيتكتب في الورقة لحظة بلحظة.
+  String partial = '';
+
+  /// سماعات اتفتحت — الاختبار بيعدّها: دوسة واحدة = سماع واحد.
+  int sessions = 0;
+
   bool _busy = false;
-  bool _retry = false;
   bool _disposed = false;
-  bool _previewed = false;
-
-  /// تعثّرات ورا بعض (سكوت، مش مفهوم، أو وقع بعد ما بدأ). التانية =
-  /// `gen_try_hands` بدل «مافهمتش» — والمايك فاضل. بتتصفّر مع أي فهم.
   int _misses = 0;
-
-  /// جملة آخر تعثّر — الورقة بتكتبها زي ما اتقالت.
   String missLine = 'lis_not_understood';
 
   /// المايك ما اشتغلش على الشاشة دي — الزرار بيختفي لحد ما تتقفل.
   bool startFailed = false;
 
-  /// الزرار بيظهر: فيه مايك، ومش مرفوض، واشتغل، والصوت شغّال (أو المقدمة).
   bool get available =>
       voice.listener != null && !voice.micDenied && !startFailed && (voice.enabled || force);
 
-  /// الجملة اللي في الورقة وقت التأكيد — نفس اللي بيتقال.
-  String get confirmText {
-    final v = heard;
-    final a = ask;
-    if (v != null && a != null) return a(v);
-    return 'فهمت: $heardText\nصح كده؟';
-  }
+  String get confirmText => heardText ?? '';
 
   void _set(ListenPhase p) {
     if (_disposed) return;
@@ -135,27 +109,21 @@ class ListenFlow<T> extends ChangeNotifier {
 
   bool _interrupted(int gen) {
     if (gen == voice.interrupts) return false;
-    _undoPreview();
     if (phase != ListenPhase.idle) _set(ListenPhase.idle);
     return true;
   }
 
-  void _undoPreview() {
-    if (!_previewed) return;
-    _previewed = false;
-    revert?.call();
-  }
-
-  /// دوسة المايك.
+  /// دوسة المايك — **سماع واحد**.
   Future<void> start() async {
     final listener = voice.listener;
     if (listener == null || _busy || startFailed) return;
     _busy = true;
     try {
+      final wasSpeaking = voice.speaking;
       await voice.stop();
       final gen = voice.interrupts;
       if (!await listener.hasPermission()) {
-        // قبل ما النظام يسأل: «عشان أسمع حضرتك، محتاج إذن الميكروفون»
+        // مرة واحدة، قبل طلب النظام: «عشان أسمع حضرتك، محتاج إذن الميكروفون»
         await voice.speakLine('lis_mic_permission', force: true);
         if (_interrupted(gen)) return;
       }
@@ -165,44 +133,31 @@ class ListenFlow<T> extends ChangeNotifier {
         await _cantListen(failed);
         return;
       }
-      await _round(listener, gen);
+      await _listenOnce(listener, gen, settle: wasSpeaking);
     } finally {
       _busy = false;
     }
   }
 
-  /// المايك ما اشتغلش. الإذن = «كمّل بإيدك» ومش هنسأل تاني؛ أي سبب تاني =
-  /// `gen_try_hands` مرة، والزرار يختفي، والسبب للسجل والأدمن بس.
-  Future<void> _cantListen(ListenFailed failed) async {
-    _undoPreview();
-    if (failed.permission) {
-      voice.markMicDenied();
-      _set(ListenPhase.idle);
-      await voice.speakLine('lis_mic_denied', force: true);
-      return;
-    }
-    startFailed = true;
-    _set(ListenPhase.unavailable);
-    await _onStartFailure(failed.reason);
-    await voice.speakLine('gen_try_hands', force: force);
-  }
-
-  Future<void> _round(SpeechListener listener, int gen) async {
+  Future<void> _listenOnce(SpeechListener listener, int gen, {required bool settle}) async {
     heard = null;
     heardText = null;
+    partial = '';
+    // الجلسة للمايك — النفَس بس لو جملة كانت بتتقال لحظة الدوسة
+    await voice.yieldToMic(settle: settle);
+    if (_interrupted(gen)) return;
+    sessions++;
     _set(ListenPhase.listening);
-    await voice.speakLine('lis_listening', force: force);
-    if (_interrupted(gen)) return;
-    // الجملة خلصت — والجلسة بتتسلّم قبل ما المتعرّف ياخدها
-    await voice.yieldToMic();
-    final result = await listener.listen();
-    if (_interrupted(gen)) return;
+    final result = await listener.listen(onPartial: (t) {
+      if (phase != ListenPhase.listening || _disposed) return;
+      partial = t;
+      notifyListeners();
+    });
+    if (_interrupted(gen) || phase != ListenPhase.listening) return; // دوسة كسبت
     final String? text;
     switch (result) {
-      // المايك ما اشتغلش أصلاً، أو الإذن
       case ListenFailed(started: false) || ListenFailed(permission: true):
         return _cantListen(result);
-      // اشتغل ووقع في النص = تعثّرة، مش «المايك ما اشتغلش»
       case ListenFailed():
         text = null;
       case ListenSilence():
@@ -216,44 +171,24 @@ class ListenFlow<T> extends ChangeNotifier {
     _misses = 0;
     heard = value;
     heardText = describe(value);
-    if (preview case final p?) {
-      p(value);
-      _previewed = true;
-    }
     _set(ListenPhase.confirming);
-    if (ask case final a?) {
-      await voice.speakText(a(value), force: force);
-      if (_interrupted(gen)) return;
-    } else {
-      await voice.speakText('فهمت: $heardText', force: force);
-      if (_interrupted(gen)) return;
-      await voice.speakLine('lis_confirm', force: force);
-      if (_interrupted(gen)) return;
-    }
-    // «أيوه» بالصوت — أو بالإيد من الزرار اللي على الشاشة في نفس الوقت
-    await voice.yieldToMic();
-    final answer = await listener.listen();
-    if (_interrupted(gen)) return;
-    if (_retry) {
-      // «لأ، قول تاني» بالإيد وإحنا لسه بنسمع «أيوه»
-      _retry = false;
-      return _round(listener, gen);
-    }
-    if (phase != ListenPhase.confirming) return;
-    // «أيوه» ما بقتش تتسمع — الزرارين فاضلين قدّامه، مفيش «مافهمتش»
-    if (answer is ListenFailed) return;
-    switch (answer is ListenHeard ? parseYesNo(answer.text) : null) {
-      case true:
-        await confirmYes();
-      case false:
-        _undoPreview();
-        await _round(listener, gen);
-      case null:
-        break; // الزرارين فاضلين قدّامه
-    }
+    // المسجّلة — مش «فهمت: …» بصوت الموبايل. الزرارين قدّامه، ومفيش سماع.
+    await voice.speakLine('lis_confirm', force: force);
   }
 
-  /// «مافهمتش» — والتانية ورا بعض «كمّل بإيدك». المايك فاضل في الحالتين.
+  Future<void> _cantListen(ListenFailed failed) async {
+    if (failed.permission) {
+      voice.markMicDenied();
+      _set(ListenPhase.idle);
+      await voice.speakLine('lis_mic_denied', force: true);
+      return;
+    }
+    startFailed = true;
+    _set(ListenPhase.unavailable);
+    await _onStartFailure(failed.reason);
+    await voice.speakLine('gen_try_hands', force: force);
+  }
+
   Future<void> _miss() async {
     _misses++;
     missLine = _misses >= 2 ? 'gen_try_hands' : 'lis_not_understood';
@@ -262,20 +197,30 @@ class ListenFlow<T> extends ChangeNotifier {
     await voice.speakLine(missLine, force: force);
   }
 
-  /// «أيوه» — التطبيق الوحيد.
+  /// «أيوه» — **دوسة**، بتكسب على طول: الكلام والمايك بيقفوا وبيتطبّق.
   Future<void> confirmYes() async {
     final value = heard;
     if (value == null || phase != ListenPhase.confirming) return;
     heard = null;
-    _previewed = false; // اللي في الحقل بقى بتاعه
     _set(ListenPhase.done);
-    await voice.listener?.stop();
+    unawaited(voice.stop());
     if (autoApply) {
       await onApply(value);
     } else {
       confirmed = value;
     }
   }
+
+  /// «لأ» — دوسة: الكلام يقف، ومفيش سماع لوحده. «اتكلم تاني» دوسة جديدة.
+  Future<void> confirmNo() async {
+    if (phase != ListenPhase.confirming) return;
+    heard = null;
+    _set(ListenPhase.declined);
+    await voice.stop();
+  }
+
+  /// «اتكلم تاني» — دوسة جديدة = سماع جديد.
+  Future<void> again() => start();
 
   /// بيطبّق اللي اتأكّد (بعد ما الورقة اتقفلت) — مرة واحدة.
   Future<void> applyConfirmed() async {
@@ -285,21 +230,9 @@ class ListenFlow<T> extends ChangeNotifier {
     await onApply(value);
   }
 
-  /// «لأ» — اسمع تاني. السماع الجاري بيتقفل، والدورة بتبدأ من أول
-  /// «اتكلم، أنا سامعك».
-  Future<void> confirmNo() async {
-    if (phase != ListenPhase.confirming) return;
-    heard = null;
-    _undoPreview();
-    _retry = true;
-    _set(ListenPhase.listening);
-    await voice.listener?.stop();
-  }
-
-  /// قفل من غير تطبيق.
+  /// «اقفل» أو الورقة اتقفلت — المايك بيقف على طول.
   Future<void> cancel() async {
     heard = null;
-    _undoPreview();
     if (phase != ListenPhase.unavailable) _set(ListenPhase.idle);
     await voice.stop();
   }

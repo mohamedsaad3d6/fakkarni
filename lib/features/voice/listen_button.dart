@@ -9,27 +9,21 @@ import '../../core/widgets/primitives.dart';
 import '../../domain/voice/voice_catalog.dart';
 import 'listen_flow.dart';
 
-/// «🎤 اتكلم» — جنب «ساعدني»، **بس فين الإجابة مقفولة أو حقل كلام حر**:
-/// أيوه/لأ، ساعة، رقم، راجل/ست، ورد التذكير — والاسم (حر: الكلام بيتكتب في
-/// الحقل وبيتسأل «اسمك …، صح كده؟»). حقل مش متدعوم = مفيش مايك جنبه. الدوسة بتفتح ورقة صغيرة فيها اللي
-/// بيحصل بالكلام الكبير: «اتكلم، أنا سامعك» ← «فهمت: …» + «أيوه»/«لأ» ←
-/// اتطبّق. المايك مفتوح وهو داوس بس، وبيقفل لوحده بعد سكوت قصير.
+/// «🎤 اتكلم» — **على شاشة التذكير بس** («كلّمني» ليه زراره). اتشال من كل
+/// صفحات البداية (٢٦ سبتمبر ٢٠٢٦): هناك بالإيد والكتابة بس.
 ///
-/// **بيظهر لما فيه مايك في النسخة، والصوت شغّال، والإذن مش مرفوض.** رفض
-/// الإذن بيخفيه في الجلسة دي — كل حاجة شغّالة بالإيد زي ما هي. من غير
+/// دوسة = سماع واحد على طول (شوف [ListenFlow]): ورقة فيها مايك بينبض و
+/// «سامعك…» والكلام بيتكتب وهو بيتقال ← الكلام كبير + «صح كده؟» المسجّلة +
+/// «أيوه»/«لأ» بالإيد ← اتطبّق. أي دوسة بتقفل المايك على طول.
+///
+/// **بيظهر لما فيه مايك في النسخة، والصوت شغّال، والإذن مش مرفوض.** من غير
 /// `AppScope` أو من غير خدمة صوت = مفيش زرار (زي «ساعدني»).
-///
-/// أول مرة يظهر (`listenIntroDone`): «دلوقتي تقدر تكلّمني…» بعد اللي
-/// بيتقال — مش فوقه.
 class ListenButton<T> extends StatefulWidget {
   const ListenButton({
     required this.tag,
     required this.parse,
     required this.describe,
     required this.onApply,
-    this.ask,
-    this.preview,
-    this.revert,
     this.force = false,
     this.elder = false,
     this.onDark = false,
@@ -37,11 +31,6 @@ class ListenButton<T> extends StatefulWidget {
     super.key,
   });
 
-  /// حقل كلام حر: سؤال التأكيد كامل بصوت الموبايل («اسمك أحمد، صح كده؟»)،
-  /// والكلام بيتكتب في الحقل قبل «أيوه» ([preview]) وبيرجع لو «لأ» ([revert]).
-  final String Function(T value)? ask;
-  final void Function(T value)? preview;
-  final VoidCallback? revert;
 
   /// كلمة جنب الزرار بتقول إيه اللي يتقال («قول «أخدته» أو دوس») — بتظهر
   /// وتختفي مع الزرار نفسه، وأكبر في نمط كبار السن.
@@ -66,7 +55,6 @@ class ListenButton<T> extends StatefulWidget {
 
 class _ListenButtonState<T> extends State<ListenButton<T>> with WidgetsBindingObserver {
   ListenFlow<T>? _flow;
-  bool _introQueued = false;
 
   @override
   void initState() {
@@ -87,23 +75,9 @@ class _ListenButtonState<T> extends State<ListenButton<T>> with WidgetsBindingOb
       parse: (heard) => widget.parse(heard),
       describe: (v) => widget.describe(v),
       onApply: (v) => widget.onApply(v),
-      ask: widget.ask == null ? null : (v) => widget.ask!(v),
-      preview: widget.preview == null ? null : (v) => widget.preview?.call(v),
-      revert: widget.revert == null ? null : () => widget.revert?.call(),
       force: widget.force,
       autoApply: false,
     );
-    voice.addListener(_maybeIntro);
-    _maybeIntro();
-  }
-
-  /// «دلوقتي تقدر تكلّمني» — مرة واحدة في عمر التنزيلة، أول ما الزرار يبان.
-  void _maybeIntro() {
-    final flow = _flow;
-    if (flow == null || _introQueued || !flow.available || flow.voice.listenIntroDone) return;
-    _introQueued = true;
-    unawaited(flow.voice.markListenIntroDone());
-    unawaited(flow.voice.speakQueued(const ['lis_intro'], force: widget.force));
   }
 
   @override
@@ -115,7 +89,6 @@ class _ListenButtonState<T> extends State<ListenButton<T>> with WidgetsBindingOb
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _flow?.voice.removeListener(_maybeIntro);
     _flow?.dispose();
     super.dispose();
   }
@@ -195,8 +168,8 @@ class _ListenButtonState<T> extends State<ListenButton<T>> with WidgetsBindingOb
   }
 }
 
-/// ورقة السماع: اللي بيحصل بالكلام الكبير، وزرارين «أيوه»/«لأ» لما نفهم —
-/// وبتتقفل لوحدها لما الإجابة تتطبّق.
+/// ورقة السماع: اللي بيحصل بالكلام الكبير — وبتتقفل لوحدها لما الإجابة
+/// تتطبّق.
 Future<void> showListenSheet(BuildContext context, ListenFlow flow) => FSheet.show<void>(
       context,
       title: 'اتكلم',
@@ -215,9 +188,8 @@ class _ListenBodyState extends State<_ListenBody> {
   @override
   void initState() {
     super.initState();
-    // الورقة بتكتب الجملة بنفسها — الترجمة اللي تحت تسكت، عشان تتكتب مرة
-    // بعد الفريم: الورقة بتتبني جوّه build، والترجمة فوقها في الشجرة —
-    // تنبيهها وسط البناء ممنوع وكانت بتفضل ظاهرة
+    // الورقة بتكتب الجملة بنفسها — الترجمة اللي تحت تسكت، عشان تتكتب مرة.
+    // بعد الفريم: التنبيه وسط البناء ممنوع.
     final voice = widget.flow.voice;
     scheduleMicrotask(voice.holdCaption);
     widget.flow.addListener(_onPhase);
@@ -232,61 +204,128 @@ class _ListenBodyState extends State<_ListenBody> {
   @override
   void dispose() {
     widget.flow.removeListener(_onPhase);
-    // برّه مرحلة القفل بتاعة الشجرة
     final voice = widget.flow.voice;
     scheduleMicrotask(voice.releaseCaption);
     super.dispose();
+  }
+
+  /// «اقفل»: المايك يقف **الأول**، وبعدين الورقة.
+  Future<void> _close() async {
+    unawaited(widget.flow.cancel());
+    if (mounted) await Navigator.of(context).maybePop();
   }
 
   @override
   Widget build(BuildContext context) {
     final flow = widget.flow;
     final body = TextStyle(fontSize: F.minBodySize, color: F.ink, height: 1.5);
+    final big = TextStyle(fontSize: F.subtitleSize, fontWeight: FontWeight.w700, color: F.ink, height: 1.5);
+    Widget close() => FSecondaryButton(key: const ValueKey('listen-close'), label: 'اقفل', onPressed: _close);
+    Widget again() => FPrimaryButton(key: const ValueKey('listen-again'), label: 'اتكلم تاني', onPressed: flow.again);
     return ListenableBuilder(
       listenable: flow,
       builder: (context, _) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          switch (flow.phase) {
-            ListenPhase.listening => Row(
+        children: switch (flow.phase) {
+          ListenPhase.listening => [
+              Row(
                 key: const ValueKey('listen-listening'),
                 children: [
-                  Icon(Icons.mic, size: 32, color: F.gold),
-                  const SizedBox(width: F.s10),
-                  Expanded(child: Text(voiceLine('lis_listening'), style: body)),
+                  const PulsingMic(),
+                  const SizedBox(width: F.s12),
+                  Expanded(child: Text('سامعك…', style: big)),
                 ],
               ),
-            ListenPhase.confirming => Text(
-                flow.confirmText,
-                key: const ValueKey('listen-heard'),
-                style: TextStyle(fontSize: F.subtitleSize, fontWeight: FontWeight.w700, color: F.ink, height: 1.5),
+              const SizedBox(height: F.s10),
+              // الكلام وهو بيتقال
+              Text(
+                flow.partial,
+                key: const ValueKey('listen-partial'),
+                style: TextStyle(fontSize: F.subtitleSize, color: F.ink, height: 1.4),
               ),
-            ListenPhase.notUnderstood => Text(
-                voiceLine(flow.missLine),
-                key: const ValueKey('listen-not-understood'),
-                style: body,
-              ),
-            // المايك ما اشتغلش — مش «مافهمتش». الزرار اختفى من الشاشة.
-            ListenPhase.unavailable => Text(
-                voiceLine('gen_try_hands'),
-                key: const ValueKey('listen-unavailable'),
-                style: body,
-              ),
-            ListenPhase.idle || ListenPhase.done => Text('ثواني…', style: body),
-          },
-          const SizedBox(height: F.gap),
-          if (flow.phase == ListenPhase.confirming) ...[
-            FPrimaryButton(key: const ValueKey('listen-yes'), label: 'أيوه', onPressed: flow.confirmYes),
-            const SizedBox(height: F.s10),
-            FSecondaryButton(key: const ValueKey('listen-no'), label: 'لأ، قول تاني', onPressed: flow.confirmNo),
-          ] else if (flow.phase == ListenPhase.notUnderstood) ...[
-            FPrimaryButton(key: const ValueKey('listen-again'), label: 'قول تاني', onPressed: flow.start),
-            const SizedBox(height: F.s10),
-            FSecondaryButton(label: 'اقفل', onPressed: () => Navigator.of(context).maybePop()),
-          ] else
-            FSecondaryButton(key: const ValueKey('listen-close'), label: 'اقفل', onPressed: () => Navigator.of(context).maybePop()),
-        ],
+              const SizedBox(height: F.gap),
+              close(),
+            ],
+          ListenPhase.confirming => [
+              Text(flow.confirmText, key: const ValueKey('listen-heard'), style: big.copyWith(fontSize: F.screenTitleSize)),
+              const SizedBox(height: F.s4),
+              Text(voiceLine('lis_confirm'), style: body),
+              const SizedBox(height: F.gap),
+              FPrimaryButton(key: const ValueKey('listen-yes'), label: 'أيوه', onPressed: flow.confirmYes),
+              const SizedBox(height: F.s10),
+              FSecondaryButton(key: const ValueKey('listen-no'), label: 'لأ', onPressed: flow.confirmNo),
+            ],
+          ListenPhase.notUnderstood => [
+              Text(voiceLine(flow.missLine), key: const ValueKey('listen-not-understood'), style: body),
+              const SizedBox(height: F.gap),
+              again(),
+              const SizedBox(height: F.s10),
+              close(),
+            ],
+          ListenPhase.declined => [
+              Text('ماشي — دوس «اتكلم تاني» وقولها تاني، أو دوس بإيدك.', key: const ValueKey('listen-declined'), style: body),
+              const SizedBox(height: F.gap),
+              again(),
+              const SizedBox(height: F.s10),
+              close(),
+            ],
+          // المايك ما اشتغلش — مش «مافهمتش». الزرار اختفى من الشاشة.
+          ListenPhase.unavailable => [
+              Text(voiceLine('gen_try_hands'), key: const ValueKey('listen-unavailable'), style: body),
+              const SizedBox(height: F.gap),
+              close(),
+            ],
+          ListenPhase.idle || ListenPhase.done => [
+              Text('ثواني…', style: body),
+              const SizedBox(height: F.gap),
+              close(),
+            ],
+        },
       ),
     );
   }
+}
+
+/// مايك بينبض — **لحظة ما المايك مفتوح بس**. «تقليل الحركة» = ثابت.
+class PulsingMic extends StatefulWidget {
+  const PulsingMic({super.key});
+
+  @override
+  State<PulsingMic> createState() => PulsingMicState();
+}
+
+class PulsingMicState extends State<PulsingMic> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+      _c.stop();
+    } else if (!_c.isAnimating) {
+      _c.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _c,
+        builder: (context, child) => Container(
+          key: const ValueKey('listen-pulse'),
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: F.gold.withValues(alpha: 0.15 + 0.25 * _c.value),
+          ),
+          alignment: Alignment.center,
+          child: Icon(Icons.mic, size: 32, color: F.gold),
+        ),
+      );
 }

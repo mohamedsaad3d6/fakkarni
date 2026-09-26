@@ -63,16 +63,25 @@ class FakeListener implements SpeechListener {
     Duration silence = ListenTimings.silence,
     Duration maxLength = ListenTimings.maxLength,
     Duration firstWordWithin = ListenTimings.firstWordWithin,
+    void Function(String partial)? onPartial,
   }) async {
     if (!prepared) throw StateError('listen قبل prepare');
     listens++;
+    _partial = onPartial;
     onListen?.call();
     if (hold) {
       final c = _open = Completer<ListenResult>();
       return c.future;
     }
-    return _asResult(answers.isEmpty ? null : answers.removeAt(0));
+    final r = _asResult(answers.isEmpty ? null : answers.removeAt(0));
+    if (r case ListenHeard(:final text)) onPartial?.call(text);
+    return r;
   }
+
+  void Function(String partial)? _partial;
+
+  /// كلام اتسمع وهو لسه بيتكلم — زي المتعرّف الحقيقي.
+  void partial(String text) => _partial?.call(text);
 
   /// المايك مفتوح دلوقتي (سماع مستني).
   bool get listening => _open != null;

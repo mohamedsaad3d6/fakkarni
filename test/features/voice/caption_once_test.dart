@@ -93,20 +93,23 @@ void main() {
         ),
       ),
     );
-    // كل جملة «بتفضل بتتقال» لحد ما نسيبها — زي تسجيل طويل على الجهاز
-    player.holdPlayback = true;
+    // المايك مفتوح (hold): «سامعك…» في الورقة، ومفيش حاجة بتتقال
+    listener.hold = true;
     await tester.tap(find.byKey(const ValueKey('listen-wake')));
     await settle(tester);
-    expect(voice.caption.value, voiceLine('lis_listening'));
-    expect(find.text(voiceLine('lis_listening')), findsOneWidget, reason: 'مرة واحدة');
-    expect(find.byKey(const ValueKey('voice-caption')), findsNothing);
+    expect(find.text('سامعك…'), findsOneWidget);
+    expect(voice.caption.value, isNull, reason: 'ولا جملة قبل المايك');
 
-    // «اتكلم، أنا سامعك» خلصت ← المايك سمع سكوت ← «مافهمتش» بتتقال
-    await player.stop();
+    // سكوت ← «مافهمتش» بتتقال — والتسجيل طويل
+    player.holdPlayback = true;
+    listener.hear(null);
     await settle(tester);
     expect(voice.caption.value, voiceLine('lis_not_understood'), reason: 'الجملة لسه بتتقال');
     expect(find.text(voiceLine('lis_not_understood')), findsOneWidget, reason: 'مرة واحدة');
     expect(find.byKey(const ValueKey('voice-caption')), findsNothing, reason: 'الورقة هي اللي كاتباها');
+    player.holdPlayback = false;
+    await player.stop();
+    await settle(tester);
 
     // الورقة اتقفلت → الترجمة ترجع لشغلها
     await tester.tap(find.text('اقفل'));
@@ -114,15 +117,14 @@ void main() {
     expect(voice.captionHolds.value, 0);
   });
 
-  screenTest('«كلّمني»: «اتكلم، أنا سامعك.» مكتوبة مرة', (tester) async {
-    await setUpWith(const []);
-    player.holdPlayback = true;
+  screenTest('«كلّمني»: «مافهمتش» مكتوبة مرة — في الورقة، مش في الكارت كمان', (tester) async {
+    await setUpWith([null]);
     await pumpWithCaption(tester, TodayScreen(routine: normalDay, now: DateTime(2026, 8, 31, 8)));
+    player.holdPlayback = true;
     await tester.tap(find.byKey(const ValueKey('talk-button')));
     await settle(tester);
-
-    expect(voice.caption.value, voiceLine('lis_listening'));
-    expect(find.text(voiceLine('lis_listening')), findsOneWidget);
+    expect(voice.caption.value, voiceLine('lis_not_understood'));
+    expect(find.text(voiceLine('lis_not_understood')), findsOneWidget);
     expect(find.byKey(const ValueKey('voice-caption')), findsNothing);
     await voice.stop();
     await tester.pump();

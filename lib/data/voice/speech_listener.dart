@@ -19,7 +19,15 @@ abstract interface class SpeechListener {
   /// اتقال كلام ([ListenHeard])، سكوت أو ما اتفهمش ([ListenSilence])، أو
   /// **السماع نفسه ما بدأش أو وقع** ([ListenFailed]) — والتالتة عمرها ما
   /// تتقال للمريض على إنها «مافهمتش».
-  Future<ListenResult> listen({Duration silence, Duration maxLength, Duration firstWordWithin});
+  ///
+  /// [onPartial] بيتنده بالكلام اللي اتسمع لحد دلوقتي، وهو بيتكلم — الشاشة
+  /// بتكتبه على طول.
+  Future<ListenResult> listen({
+    Duration silence,
+    Duration maxLength,
+    Duration firstWordWithin,
+    void Function(String partial)? onPartial,
+  });
 
   /// بيوقّف السماع فوراً — [listen] بترجّع [ListenSilence].
   Future<void> stop();

@@ -29,7 +29,7 @@ void main() {
     await h.setUp();
   });
 
-  Future<void> setUpWith(List<String?> answers) async {
+  Future<void> setUpWith(List<Object?> answers) async {
     player = FakePlayer();
     listener = FakeListener(answers: answers);
     final voice = VoiceService(player: player, tts: FakeTts(), listener: listener);
@@ -66,8 +66,8 @@ void main() {
     await settle(tester);
   }
 
-  screenTest('«أخدته» بالصوت → «أيوه» → الصف taken والخانة كلها اتلغت و«سجّلت إن حضرتك أخدته»', (tester) async {
-    await setUpWith(['أخدته', 'أيوه']);
+  screenTest('«أخدته» بالصوت → مكتوبة كبير + «صح كده؟» → دوسة «أيوه» → الصف taken والخانة كلها اتلغت', (tester) async {
+    await setUpWith(['أخدته']);
     final id = await seedDinner();
     final at = DateTime(2026, 8, 31, 20);
     expect(h.sink.scheduled.keys, contains(notificationIdFor(at)));
@@ -75,20 +75,27 @@ void main() {
     await h.pump(tester, ReminderScreen(routineDay: aug31, scheduleIds: ['$id'], now: DateTime(2026, 8, 31, 20, 5)));
     expect(find.byKey(const ValueKey('listen-dose')), findsOneWidget, reason: 'المايك على شاشة التذكير');
     await tapMic(tester);
+    expect(find.byKey(const ValueKey('listen-heard')), findsOneWidget);
+    expect(await stateOf(tester), DoseState.pending, reason: 'مفيش كتابة من غير دوسة «أيوه»');
+    await tester.tap(find.byKey(const ValueKey('listen-yes')));
+    await settle(tester);
 
     expect(await stateOf(tester), DoseState.taken);
     expect(h.sink.cancelled, containsAll([notificationIdFor(at), escalationIdFor(at, EscalationRung.first), repeatIdFor(at, 0)]),
         reason: 'القاعدة الخامسة — نفس إلغاء الزرار');
-    expect(said(), containsAllInOrder(['lis_listening', 'lis_confirm', 'help_confirm_done']));
+    expect(said(), containsAllInOrder(['lis_confirm', 'help_confirm_done']));
+    expect(listener.listens, 1, reason: 'سماع واحد للدوسة');
     expect(find.byKey(const ValueKey('listen-heard')), findsNothing, reason: 'الورقة اتقفلت');
   });
 
   screenTest('«فكّرني بعدين» بالصوت → «أيوه» → نفس التأجيل بتاع الزرار', (tester) async {
-    await setUpWith(['فكرني بعدين', 'أيوه']);
+    await setUpWith(['فكرني بعدين']);
     final id = await seedDinner();
     final at = DateTime(2026, 8, 31, 20);
     await h.pump(tester, ReminderScreen(routineDay: aug31, scheduleIds: ['$id'], now: DateTime(2026, 8, 31, 20, 5)));
     await tapMic(tester);
+    await tester.tap(find.byKey(const ValueKey('listen-yes')));
+    await settle(tester);
     expect(h.sink.scheduled.keys, contains(snoozeIdFor(at)));
     expect(await stateOf(tester), isNot(DoseState.taken));
   });
@@ -103,16 +110,36 @@ void main() {
     expect(h.sink.cancelled, isEmpty);
   });
 
-  screenTest('«فهمت: أخدته» من غير «أيوه» = مفيش تطبيق — و«لأ، قول تاني» بتسمع تاني', (tester) async {
-    await setUpWith(['أخدته', null]);
+  screenTest('«لأ» ← ولا كتابة ولا سماع لوحده؛ «اتكلم تاني» دوسة = سماع جديد', (tester) async {
+    await setUpWith(['أخدته', 'أخدته']);
     final id = await seedDinner();
     await h.pump(tester, ReminderScreen(routineDay: aug31, scheduleIds: ['$id'], now: DateTime(2026, 8, 31, 20, 5)));
     await tapMic(tester);
-    expect(find.byKey(const ValueKey('listen-heard')), findsOneWidget);
-    expect(await stateOf(tester), DoseState.pending);
-    await tester.tap(find.byKey(const ValueKey('listen-yes')));
+    await tester.tap(find.byKey(const ValueKey('listen-no')));
     await settle(tester);
-    expect(await stateOf(tester), DoseState.taken);
+    expect(find.byKey(const ValueKey('listen-declined')), findsOneWidget);
+    expect(listener.listens, 1, reason: 'مفيش سماع بيبدأ لوحده بعد دوسة');
+    expect(await stateOf(tester), DoseState.pending);
+    await tester.tap(find.byKey(const ValueKey('listen-again')));
+    await settle(tester);
+    expect(listener.listens, 2);
+    expect(find.byKey(const ValueKey('listen-heard')), findsOneWidget);
+  });
+
+  screenTest('«اقفل» وهو بيسمع ← المايك يقف على طول، ومفيش كتابة', (tester) async {
+    await setUpWith(const []);
+    listener.hold = true;
+    final id = await seedDinner();
+    await h.pump(tester, ReminderScreen(routineDay: aug31, scheduleIds: ['$id'], now: DateTime(2026, 8, 31, 20, 5)));
+    await tester.tap(find.byKey(const ValueKey('listen-dose')));
+    await settle(tester); // الورقة تطلع — والمايك لسه مفتوح (hold)
+    expect(find.byKey(const ValueKey('listen-listening')), findsOneWidget);
+    expect(find.byKey(const ValueKey('listen-pulse')), findsOneWidget, reason: 'مايك بينبض لحظة ما بيسمع');
+    await tester.tap(find.byKey(const ValueKey('listen-close')));
+    await settle(tester);
+    expect(listener.stops, greaterThanOrEqualTo(1));
+    expect(find.byKey(const ValueKey('listen-listening')), findsNothing);
+    expect(await stateOf(tester), DoseState.pending);
   });
 
   screenTest('«قول «أخدته» أو دوس» جنب المايك — وأكبر في نمط كبار السن', (tester) async {

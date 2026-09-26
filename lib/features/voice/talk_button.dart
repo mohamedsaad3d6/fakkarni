@@ -9,7 +9,9 @@ import '../../core/widgets/primitives.dart';
 import '../../domain/scheduling/day_routine.dart';
 import '../medication/add_medication_screen.dart';
 import '../medication/medication_draft.dart';
+import '../../domain/voice/voice_catalog.dart';
 import 'command_flow.dart';
+import 'listen_button.dart' show PulsingMic;
 
 /// «🎤 كلّمني» — على «يومك» تحت التحية (أكبر في نمط كبار السن). دوسة →
 /// ورقة فيها اللي بيحصل بالكلام الكبير: «اتكلم، أنا سامعك» ← «ثانية واحدة»
@@ -177,21 +179,40 @@ class _CommandBodyState extends State<_CommandBody> {
         children: [
           Row(
             children: [
-              Icon(
-                switch (flow.phase) {
-                  CommandPhase.listening => Icons.mic,
-                  CommandPhase.thinking => Icons.hourglass_top,
-                  _ => Icons.record_voice_over_outlined,
-                },
-                size: 32,
-                color: flow.phase == CommandPhase.listening ? F.gold : F.mutedDark,
-              ),
+              if (flow.phase == CommandPhase.listening)
+                // المايك مفتوح — بينبض لحظة ما بيسمع بس
+                const PulsingMic()
+              else
+                Icon(
+                  flow.phase == CommandPhase.thinking ? Icons.hourglass_top : Icons.record_voice_over_outlined,
+                  size: 32,
+                  color: F.mutedDark,
+                ),
               const SizedBox(width: F.s10),
               Expanded(
-                child: Text(flow.shown.isEmpty ? 'ثواني…' : flow.shown, key: const ValueKey('talk-shown'), style: big),
+                child: Text(
+                  flow.shown.isEmpty ? 'ثواني…' : flow.shown,
+                  key: const ValueKey('talk-shown'),
+                  style: flow.phase == CommandPhase.confirming ? big.copyWith(fontSize: F.screenTitleSize) : big,
+                ),
               ),
             ],
           ),
+          if (flow.phase == CommandPhase.listening) ...[
+            // الكلام وهو بيتقال
+            if (flow.partial.isNotEmpty) ...[
+              const SizedBox(height: F.s10),
+              Text(flow.partial, key: const ValueKey('talk-partial'), style: TextStyle(fontSize: F.subtitleSize, color: F.ink, height: 1.4)),
+            ],
+            if (flow.hint != null) ...[
+              const SizedBox(height: F.s10),
+              Text(flow.hint!, key: const ValueKey('talk-hint'), style: TextStyle(fontSize: F.minBodySize, color: F.mutedDark, height: 1.5)),
+            ],
+          ],
+          if (flow.phase == CommandPhase.confirming) ...[
+            const SizedBox(height: F.s4),
+            Text(voiceLine('lis_confirm'), style: TextStyle(fontSize: F.minBodySize, color: F.ink)),
+          ],
           const SizedBox(height: F.gap),
           switch (flow.phase) {
             CommandPhase.confirming => Column(
@@ -220,7 +241,15 @@ class _CommandBodyState extends State<_CommandBody> {
                   FSecondaryButton(key: const ValueKey('talk-close'), label: 'تمام', onPressed: () => Navigator.of(context).maybePop()),
                 ],
               ),
-            _ => FSecondaryButton(key: const ValueKey('talk-close'), label: 'اقفل', onPressed: () => Navigator.of(context).maybePop()),
+            // «اقفل»: المايك يقف الأول، وبعدين الورقة
+            _ => FSecondaryButton(
+                key: const ValueKey('talk-close'),
+                label: 'اقفل',
+                onPressed: () {
+                  unawaited(flow.cancel());
+                  Navigator.of(context).maybePop();
+                },
+              ),
           },
         ],
       ),

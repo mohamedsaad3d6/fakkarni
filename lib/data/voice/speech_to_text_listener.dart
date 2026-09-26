@@ -46,6 +46,7 @@ class SpeechToTextListener implements SpeechListener {
   int _startedAt = 0;
   bool _nativeMayRun = false;
   Duration _silence = ListenTimings.silence;
+  void Function(String partial)? _onPartial;
 
   /// الأحداث القديمة بتاعة مهمة اتلغت بتوصل في الـrunloop اللي بعده —
   /// بنستناها تخلص قبل مهمة جديدة.
@@ -110,8 +111,10 @@ class SpeechToTextListener implements SpeechListener {
     Duration silence = ListenTimings.silence,
     Duration maxLength = ListenTimings.maxLength,
     Duration firstWordWithin = ListenTimings.firstWordWithin,
+    void Function(String partial)? onPartial,
   }) async {
     if (!_ready) return const ListenFailed('not_ready');
+    _onPartial = onPartial;
     await _endPrevious();
     final result = _pending = Completer<ListenResult>();
     _session = ListenSession(onDevice: _preferOnDevice && !_onDeviceRefused, serverRetried: _onDeviceRefused);
@@ -141,6 +144,7 @@ class SpeechToTextListener implements SpeechListener {
         onResult: (r) {
           final first = session.words.isEmpty && r.recognizedWords.isNotEmpty;
           session.heard(r.recognizedWords);
+          if (r.recognizedWords.isNotEmpty) _onPartial?.call(r.recognizedWords);
           if (first) {
             // بدأ يتكلم: من هنا السكوت القصير بيقفل
             diag('Listen: $_tag أول كلام');

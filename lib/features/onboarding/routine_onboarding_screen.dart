@@ -3,15 +3,11 @@ import '../voice/help_button.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
-import '../../core/format/arabic_time.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/patient_voice.dart';
 import '../../core/widgets/primitives.dart';
 import '../../domain/patient/sex.dart';
 import '../../domain/scheduling/day_routine.dart';
-import '../../domain/voice/answer_parser.dart';
-import '../../domain/voice/voice_time.dart';
-import '../voice/listen_button.dart';
 import 'onboarding_voice.dart';
 import 'profile_page.dart';
 import 'routine_presets.dart';
@@ -74,61 +70,6 @@ class _RoutineOnboardingScreenState extends State<RoutineOnboardingScreen> {
     DayAnchor.dinner: 'onb_dinner',
     DayAnchor.sleep: 'onb_sleep',
   };
-
-  /// «اتكلم» لصفحة دلوقتي — إجابة مقفولة: الاسم، راجل/ست، السن، أو ساعة.
-  /// كل واحد بيطبّق **بنفس** سكّة الإيد (الحقل، الشريحة، البكرة).
-  Widget _listenFor() {
-    if (_needsProfile == true) {
-      return switch (_profileStep) {
-        // **الاسم حقل حر** — مفيش قارئ: اللي اتسمع بيتكتب في الحقل زي ما هو،
-        // والسؤال «اسمك …، صح كده؟» بصوت الموبايل. «لأ» بترجّع اللي كان مكتوب.
-        0 => ListenButton<String>(
-            tag: 'name',
-            parse: _freeText,
-            describe: (n) => n,
-            ask: (n) => 'اسمك $n، صح كده؟',
-            preview: (n) => _profile.currentState?.previewName(n),
-            revert: () => _profile.currentState?.revertName(),
-            onApply: (n) async => _profile.currentState?.applyName(n),
-          ),
-        1 => ListenButton<SpokenSex>(
-            tag: 'gender',
-            parse: parseSex,
-            describe: (s) => s == SpokenSex.male ? 'راجل' : 'ست',
-            onApply: (s) async => _profile.currentState?.applySex(s == SpokenSex.male ? Sex.m : Sex.f),
-          ),
-        _ => ListenButton<int>(
-            tag: 'age',
-            parse: parseAge,
-            describe: (a) => 'سنّك ${arabicNumber(a)} سنة',
-            onApply: (a) async => _profile.currentState?.applyAge(a),
-          ),
-      };
-    }
-    final question = routineQuestions[_index];
-    return ListenButton<SpokenTime>(
-      tag: question.anchor.name,
-      parse: (heard) => parseTime(heard, hint: _hintFor(question.anchor)),
-      describe: (t) => 'الساعة ${voiceTime(DateTime(2026, 1, 1, t.hour, t.minute))}',
-      // = حرّك البكرة لحد الساعة دي — «تمام» لسه بإيده
-      onApply: (t) async => setState(() => _answers[question.anchor] = MinuteOfDay(t.minutes)),
-    );
-  }
-
-  /// كلام حر: زي ما اتقال، من غير مسافات زيادة — فاضي = ما اتقالش حاجة.
-  static String? _freeText(String heard) {
-    final t = heard.trim().replaceAll(RegExp(r'\s+'), ' ');
-    return t.isEmpty ? null : t;
-  }
-
-  /// السؤال نفسه بيقول جزء اليوم: «تمانيه» في «بتفطر الساعة كام؟» الصبح،
-  /// وفي «بتتعشى» بالليل. من غير ده الساعة الناقصة ما بتتفهمش.
-  static DayPartHint _hintFor(DayAnchor anchor) => switch (anchor) {
-        DayAnchor.wake || DayAnchor.breakfast => DayPartHint.morning,
-        DayAnchor.lunch => DayPartHint.noon,
-        DayAnchor.dinner => DayPartHint.evening,
-        DayAnchor.sleep => DayPartHint.night,
-      };
 
   /// جملة الصفحة اللي قدّامه دلوقتي — «ساعدني» فوق بيعيدها.
   String get _pageLine => _needsProfile == true
@@ -290,9 +231,7 @@ class _RoutineOnboardingScreenState extends State<RoutineOnboardingScreen> {
                                 ),
                               ),
                               const SizedBox(width: F.s8),
-                              // «اتكلم» جنب «ساعدني» — والاتنين عن صفحة دلوقتي
-                              _listenFor(),
-                              const SizedBox(width: F.s6),
+                              // مفيش «اتكلم» هنا (٢٦ سبتمبر ٢٠٢٦): البداية بالإيد والكتابة بس
                               // جملة الصفحة نفسها — نفس اللي اتقالت لوحدها
                               HelpButton(_pageLine),
                             ],
