@@ -434,6 +434,14 @@ class SyncService {
     );
   }
 
+  /// **صف المريض ده في السحابة، والجلسة دي صاحبته؟** — نفس بوابة الدفع
+  /// بالظبط (جلسة + اترفع + مش محجوب). النبضة بتسأل هنا قبل ما تكتب في
+  /// `device_health`: سياستها `owns_patient(patient_uuid)`، ومريض لسه ما
+  /// اترفعش (مش مربوط) أو مملوك لمستخدم مجهول قديم = `42501` على كل فتحة
+  /// (آيفون، ٢٦ سبتمبر ٢٠٢٦).
+  Future<bool> cloudOwnsPatient() async =>
+      _hasSession() && await _linked() && await blockedReason() == null;
+
   Future<bool> _linked() async {
     final row = await (_db.select(_db.patients)
           ..where((t) => t.syncedAtMs.isNotNull())

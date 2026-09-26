@@ -133,4 +133,16 @@ void main() {
     final later = start.add(const Duration(minutes: 1));
     expect(await retry.report(runHealthChecks(snap(later)), snap(later)), isTrue);
   });
+
+  test('مريض مش في السحابة (مش مربوط / حساب تاني): ولا نداء — كان 42501 على كل فتحة', () async {
+    SharedPreferences.setMockInitialValues({});
+    final remote = _Recording();
+    final beat = HealthHeartbeat(remote: remote, patientUuid: 'p1', eligible: () async => false);
+    expect(await beat.report(runHealthChecks(snap(start)), snap(start)), isFalse);
+    expect(remote.rows, isEmpty);
+
+    final ok = HealthHeartbeat(remote: remote, patientUuid: 'p1', eligible: () async => true);
+    expect(await ok.report(runHealthChecks(snap(start)), snap(start)), isTrue);
+    expect(remote.rows, hasLength(1));
+  });
 }

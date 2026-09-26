@@ -30,10 +30,14 @@ abstract interface class HealthRemote {
 const Duration heartbeatEvery = Duration(hours: 6);
 
 class HealthHeartbeat {
-  const HealthHeartbeat({required this.remote, required this.patientUuid});
+  const HealthHeartbeat({required this.remote, required this.patientUuid, this.eligible});
 
   final HealthRemote remote;
   final String patientUuid;
+
+  /// الصف مسموح يتكتب؟ — `SyncService.cloudOwnsPatient`. false = ولا نداء:
+  /// مريض مش في السحابة (مش مربوط) أو مش بتاع الجلسة دي، والسياسة هترفض.
+  final Future<bool> Function()? eligible;
 
   static const _codesKey = 'health.lastCodes';
   static const _sentKey = 'health.lastSentMs';
@@ -54,6 +58,10 @@ class HealthHeartbeat {
       final changed = previous == null || !_sameCodes(previous, codes);
       final due = last == null || snapshot.now.difference(last) >= heartbeatEvery;
       if (!changed && !due) return false;
+      if (eligible != null && !await eligible!()) {
+        diag('Health: النبضة مستنية — المريض مش في السحابة لسه أو مش بتاع الجلسة دي');
+        return false;
+      }
 
       await remote.upsert({
         'patient_uuid': patientUuid,

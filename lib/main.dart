@@ -239,9 +239,11 @@ Future<void> main() async {
   final patient = await services.routines.getPatient(services.patientId);
   unawaited(HealthWatcher(
     collector: HealthCollector(services),
-    heartbeat: (cloud == null || patient == null)
+    // النبضة بس لما صف المريض في السحابة وبتاع الجلسة دي — نفس بوابة الدفع.
+    // من غيرها كانت بترجع 42501 على كل فتحة لمريض مش مربوط.
+    heartbeat: (cloud == null || patient == null || sync == null)
         ? null
-        : HealthHeartbeat(remote: cloud.health, patientUuid: patient.uuid),
+        : HealthHeartbeat(remote: cloud.health, patientUuid: patient.uuid, eligible: sync.cloudOwnsPatient),
   ).run());
 
   unawaited(MedicationChangePuller.loadNotices());
