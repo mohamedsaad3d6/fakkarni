@@ -9,6 +9,8 @@ import '../../app/app_scope.dart';
 import '../../core/format/arabic_time.dart';
 import '../../core/format/name_direction.dart';
 import '../../core/theme/tokens.dart';
+import '../../core/widgets/keyboard_dismiss.dart';
+import '../../core/widgets/shell_bottom_extra.dart';
 import '../../data/services/appointment_card.dart';
 import '../../core/widgets/patient_voice.dart';
 import '../../core/widgets/primitives.dart';
@@ -60,6 +62,16 @@ class TodayScreen extends StatefulWidget {
 }
 
 class _TodayScreenState extends State<TodayScreen> {
+  /// «القريب مني» ظاهر بس والصفحة واصلة لآخرها (أو قصيرة ومفيش لفّ) —
+  /// ساعتها اللي تحته المسافة الفاضية بتاعته، مش كارت.
+  bool _nearbyVisible = false;
+
+  void _trackEnd(ScrollMetrics m, int depth) {
+    if (depth != 0 || m.axis != Axis.vertical) return;
+    final atEnd = m.maxScrollExtent - m.pixels <= 1;
+    if (atEnd != _nearbyVisible && mounted) setState(() => _nearbyVisible = atEnd);
+  }
+
   StreamSubscription<List<DoseSchedule>>? _schedulesSub;
   List<DoseSchedule> _schedules = const [];
 
@@ -335,8 +347,28 @@ class _TodayScreenState extends State<TodayScreen> {
     // Scaffold جوّه تبويب الهيكل: الأرضية، وMaterial للـInkWell لما الشاشة
     // تتبني لوحدها في الاختبار.
     return Scaffold(
-      // «القريب مني» **مابقاش عايم** (آيفون، ٢٦ سبتمبر ٢٠٢٦): كان بيقعد فوق
-      // كارت الجرعة. بقى سطر جوّه الصفحة، بعد «معلومة تهمك».
+      // «القريب مني» عايم في آخر السطر (ناحية الشمال في RTL) — ثانوي، مش
+      // أساسي: الأساسي الوحيد على الشاشة دي «تأكيد الجرعة».
+      // **وعمره ما يقعد فوق كارت** (آيفون، ٢٦ سبتمبر ٢٠٢٦: كان فوق كارت
+      // الجرعة على SE): بيظهر بس والصفحة واصلة لآخرها — هناك المسافة اللي
+      // تحت آخر صف ([_NearbyPill.clearance]) فاضية، فمفيش حاجة تحته. وبيختفي
+      // والكيبورد مرفوع — شوف `keyboard_dismiss.dart`.
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: keyboardIsUp(context)
+          ? null
+          : IgnorePointer(
+              ignoring: !_nearbyVisible,
+              child: AnimatedOpacity(
+                opacity: _nearbyVisible ? 1 : 0,
+                duration: const Duration(milliseconds: 150),
+                child: Padding(
+                  // الهدف ٥٦ والشكل ٤٤ — الهامش بيقل بنص الفرق، فالبيل في مكانه بالظبط
+                  // مسافة الهيكل لـ«ضيف» بتتطرح: البيل في مكانه القديم بالظبط
+                  padding: EdgeInsets.only(bottom: F.s10 - _NearbyPill.hitSlop + MediaQuery.of(context).padding.bottom - ShellBottomExtra.of(context)),
+                  child: _NearbyPill(onTap: _openNearby),
+                ),
+              ),
+            ),
       body: StreamBuilder<List<DoseEventView>>(
         stream: _events,
         builder: (context, snapshot) {
@@ -347,7 +379,17 @@ class _TodayScreenState extends State<TodayScreen> {
           final lines = nowLines(nowCards, _snoozed);
           final glucoseNow = latestOutsideUsual(_readings);
 
-          return ListView(
+          return NotificationListener<ScrollMetricsNotification>(
+            onNotification: (n) {
+              _trackEnd(n.metrics, n.depth);
+              return false;
+            },
+            child: NotificationListener<ScrollUpdateNotification>(
+            onNotification: (n) {
+              _trackEnd(n.metrics, n.depth);
+              return false;
+            },
+            child: ListView(
             // مساحة تحت عشان آخر كارت يعدّي من تحت الدوك من غير ما يتخبّى
             // تحته. `padding.bottom` جوّه جسم الـScaffold المفرود بيساوي
             // طول الدوك — Flutter بيحطه هناك بالظبط للسبب ده.
@@ -360,7 +402,9 @@ class _TodayScreenState extends State<TodayScreen> {
               F.gap,
               F.gap,
               F.gap,
-              F.gap + MediaQuery.of(context).padding.bottom,
+              // مسافة «القريب مني» أكبر من طلعة «ضيف»، فبتغطّيها — مسافة الهيكل
+              // بتتطرح عشان آخر الصفحة يفضل في مكانه القديم بالبكسل
+              F.gap + MediaQuery.of(context).padding.bottom - ShellBottomExtra.of(context) + (keyboardIsUp(context) ? 0 : _NearbyPill.clearance),
             ),
             children: [
               StreamBuilder<PatientRow?>(
@@ -580,12 +624,6 @@ class _TodayScreenState extends State<TodayScreen> {
                 ),
               ),
               const SizedBox(height: F.gap),
-              // «القريب مني» — سطر في الصفحة، مش زرار عايم فوق المحتوى
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: _NearbyPill(onTap: _openNearby),
-              ),
-              const SizedBox(height: F.gap),
               // القاعدة ٤: مجهول اتسجّل لازم يفضل ظاهر هنا — سؤال هادي للصيدلي
               StreamBuilder<List<MedicationRow>>(
                 stream: _amountUnknown,
@@ -631,6 +669,8 @@ class _TodayScreenState extends State<TodayScreen> {
               // مسافة تحت عشان آخر سطر ما يستخبّاش ورا زرار «ضيف»
               const SizedBox(height: F.s30 * 2),
             ],
+          ),
+            ),
           );
         },
       ),
@@ -965,8 +1005,8 @@ class _EmptyPanel extends StatelessWidget {
       );
 }
 
-/// «القريب مني» — بيل صغير **جوّه صفحة «يومك»** (كان عايم وبيغطّي كارت
-/// الجرعة على SE). هدف اللمس ٥٦ زي أي زرار.
+/// «القريب مني» — بيل عايم صغير تحت الشمال، **في الرئيسية وبس** — وبيظهر بس
+/// والصفحة في آخرها، فعمره ما يقعد فوق كارت. الشكل ٤٤ والهدف ٥٦.
 ///
 /// دهبي مليان بحد زيتي زي ما المالك طلب. الدهبي هنا حالة «تقدر تروح
 /// دلوقتي» مش تنبيه، وهو الزرار الوحيد بالشكل ده على الشاشة.
@@ -975,10 +1015,27 @@ class _NearbyPill extends StatelessWidget {
 
   final VoidCallback onTap;
 
-  static const double height = F.minTapTarget;
+  static const double height = 44;
+
+  /// اللمس ٥٦ (القاعدة) والشكل ٤٤ — نص الفرق فوق ونصه تحت، مش ظاهر.
+  static const double hitSlop = (F.minTapTarget - height) / 2;
+
+  /// المسافة اللي القايمة لازم تسيبها تحت آخر صف: الزرار + هامشه تحت
+  /// (`F.s10`) + هامش الـFAB بتاع Material + نفَس.
+  static const double clearance = height + F.s10 + kFloatingActionButtonMargin + F.s8;
 
   @override
-  Widget build(BuildContext context) => Material(
+  Widget build(BuildContext context) => GestureDetector(
+        // الهدف ٥٦ من غير ما الشكل يكبر
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: hitSlop),
+          child: _pill(),
+        ),
+      );
+
+  Widget _pill() => Material(
         color: F.gold,
         elevation: 2,
         shape: RoundedRectangleBorder(

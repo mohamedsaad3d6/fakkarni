@@ -17,6 +17,8 @@ import 'package:fakkarni/data/repositories/dose_event_repository.dart';
 import 'package:fakkarni/data/repositories/medication_repository.dart';
 import 'package:fakkarni/data/repositories/routine_repository.dart';
 import 'package:fakkarni/data/services/reminder_scheduler.dart';
+import 'package:fakkarni/domain/scheduling/day_routine.dart';
+import 'package:fakkarni/domain/scheduling/dose_schedule.dart';
 
 import '../features/scan/scan_test_support.dart' show normalDay, RecordingSink;
 import '../support/seeded_clock.dart';
@@ -117,33 +119,51 @@ void main() {
     expectLabelsApart(tester, AppShell.elderTabs);
   });
 
-  screenTestish('الشريط العلوي مصمت بحافة: الصفحة بتقف تحته، وبعد اللفّ ظل', (tester) async {
+  screenTestish('الشريط العلوي مصمت بلون الصفحة — من غير خط ولا ظل، حتى بعد اللفّ (المالك رجّعهم)', (tester) async {
     await pumpSe(tester, AppShell(routine: normalDay, now: DateTime(2026, 8, 31, 6)));
     final bar = tester.getRect(find.byType(AppBar).first);
     Material barMaterial() => tester.widget<Material>(
         find.descendant(of: find.byType(AppBar).first, matching: find.byType(Material)).first);
-    expect(barMaterial().color?.a, 1.0, reason: 'لون الشريط مصمت');
-    final shape = barMaterial().shape;
-    expect(shape, isA<Border>(), reason: 'حافة تحت الشريط');
-    expect((shape! as Border).bottom.width, greaterThan(0));
+    expect(barMaterial().color, F.pageGround, reason: 'نفس لون الصفحة، مصمت');
+    expect(barMaterial().color?.a, 1.0);
+    expect(barMaterial().shape, isNot(isA<Border>()), reason: 'الخط اللي تحت اترجع');
     // المحتوى بيتقصّ عند حافة الشريط — مش تحته
     expect(tester.getRect(find.byType(ListView).first).top, greaterThanOrEqualTo(bar.bottom));
-
     await tester.drag(find.byType(ListView).first, const Offset(0, -400));
     await settle(tester);
-    expect(barMaterial().elevation, greaterThan(0), reason: 'ظل لما المحتوى يعدّي تحته');
+    expect(barMaterial().elevation, 0, reason: 'ولا ظل بعد اللفّ');
   });
 
+  for (final scale in [1.0, 1.3]) {
+    screenTestish('«القريب مني» عايم (×$scale) — وعمره ما يقعد فوق كارت: مخفي فوق، ظاهر في الآخر على مسافة فاضية', (tester) async {
+      final meds = services.medications;
+      for (final (n, a) in [('Concor', DayAnchor.breakfast), ('Telfast', DayAnchor.lunch), ('Aspocid', DayAnchor.dinner)]) {
+        await meds.addMedicationWithDoses(patientId: services.patientId, name: n, timings: [AnchorTiming(a, -30)], startDate: DateTime(2026, 8, 1));
+      }
+      await pumpSe(tester, AppShell(routine: normalDay, now: DateTime(2026, 8, 31, 7, 35)), scale: scale);
+      final pillFinder = find.byKey(const ValueKey('nearby-pill'));
+      expect(find.ancestor(of: pillFinder, matching: find.byType(ListView)), findsNothing, reason: 'عايم، مش سطر');
+      double opacity() => tester.widget<AnimatedOpacity>(find.ancestor(of: pillFinder, matching: find.byType(AnimatedOpacity))).opacity;
+      expect(opacity(), 0, reason: 'فوق فيه كروت تحته — مخفي');
 
-  screenTestish('«القريب مني» سطر جوّه «يومك» — مش زرار عايم فوق الكارت', (tester) async {
-    await pumpSe(tester, AppShell(routine: normalDay, now: DateTime(2026, 8, 31, 6)));
-    await tester.drag(find.byType(ListView).first, const Offset(0, -3000));
-    await settle(tester);
-    final pill = find.byKey(const ValueKey('nearby-pill'));
-    expect(pill, findsOneWidget);
-    expect(find.descendant(of: find.byType(ListView).first, matching: pill), findsOneWidget,
-        reason: 'جوّه الصفحة، بيتزحلق معاها');
-  });
+      // لحد الآخر فعلاً — القايمة بتبني صفوفها وهي بتتلف، فطولها بيكبر
+      for (var i = 0; i < 6; i++) {
+        await tester.drag(find.byType(ListView).first, const Offset(0, -6000));
+        await settle(tester);
+      }
+      expect(opacity(), 1, reason: 'في الآخر ظاهر');
+      final pill = tester.getRect(pillFinder);
+      final texts = find.descendant(of: find.byType(ListView).first, matching: find.byType(Text));
+      final under = [
+        for (final e in texts.evaluate())
+          if (tester.getRect(find.byWidget(e.widget)).overlaps(pill)) (e.widget as Text).data ?? '',
+      ];
+      expect(under, isEmpty, reason: 'ولا نص تحت «القريب مني»');
+      // وهدف اللمس ٥٦ والشكل ٤٤
+      expect(tester.getSize(find.ancestor(of: pillFinder, matching: find.byType(GestureDetector)).first).height, greaterThanOrEqualTo(56));
+      expect(pill.height, 44);
+    });
+  }
 
   for (final scale in [1.0, 1.3]) {
     screenTestish('الإعدادات على SE (×$scale): «امسح حسابي» بيطلع كله فوق «ضيف»', (tester) async {

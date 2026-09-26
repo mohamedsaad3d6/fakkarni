@@ -4,6 +4,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 
 import '../core/theme/tokens.dart';
+import '../core/widgets/shell_bottom_extra.dart';
 import '../core/widgets/keyboard_dismiss.dart';
 import '../core/widgets/fa_mark.dart';
 import '../core/widgets/dark_mode_toggle.dart';
@@ -158,7 +159,7 @@ class _AppShellState extends State<AppShell> {
           final extra = keyboardIsUp(context) ? 0.0 : _AddButton.overhang;
           return MediaQuery(
             data: mq.copyWith(padding: mq.padding.copyWith(bottom: mq.padding.bottom + extra)),
-            child: IndexedStack(index: _tab, children: pages),
+            child: ShellBottomExtra(extra: extra, child: IndexedStack(index: _tab, children: pages)),
           );
         },
       ),

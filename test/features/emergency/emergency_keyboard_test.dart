@@ -143,11 +143,7 @@ void main() {
 
     expect(find.text('ضيف'), findsNothing, reason: '«ضيف» فضل فوق المحتوى');
     expect(find.text('اليوم'), findsNothing, reason: 'الدوك فضل مرفوع فوق المحتوى');
-    // «القريب مني» بقى سطر جوّه الصفحة (مش عايم) — والكيبورد ما بيرفعوش
-    expect(
-      find.ancestor(of: find.text('القريب مني'), matching: find.byType(FloatingActionButton)),
-      findsNothing,
-    );
+    expect(find.text('القريب مني'), findsNothing);
 
     // وبيرجعوا لما يقفل
     tester.view.resetViewInsets();

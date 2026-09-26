@@ -409,12 +409,11 @@ void main() {
         // القاعدة مش «كله في أول شاشة» — القاعدة إن الزرار **مش
         // مغطّى**: بعد ما ينزل له، الدوك والزرار العايم فوقه ممنوعين.
         // **حد الكروم العايم بيتقاس من الكروم نفسه**، مش برقم مكتوب:
-        // الدوك و«ضيف» بيعوموا فوق الجسم («القريب مني» بقى سطر جوّه الصفحة
-        // من ٢٦ سبتمبر ٢٠٢٦)، وأول واحد فيهم
+        // الدوك و«ضيف» و«القريب مني» بيعوموا فوق الجسم، وأول واحد فيهم
         // من فوق هو السقف اللي الزرار لازم يفضل فوقه.
         double chromeTop() {
           var top = se.height;
-          for (final key in ['ضيف', 'اليوم']) {
+          for (final key in ['القريب مني', 'ضيف', 'اليوم']) {
             final f = find.text(key);
             if (f.evaluate().isEmpty) continue;
             final t = tester.getRect(f).top;
@@ -435,7 +434,7 @@ void main() {
         expect(box.bottom, lessThanOrEqualTo(chromeTop()),
             reason: 'مقدرناش نوصّل الزرار فوق الكروم العايم بالزحلقة');
         expect(box.top, greaterThanOrEqualTo(0.0), reason: 'الزرار طلع برّه من فوق');
-        for (final key in ['ضيف', 'اليوم']) {
+        for (final key in ['القريب مني', 'ضيف', 'اليوم']) {
           final other = find.text(key);
           if (other.evaluate().isEmpty) continue;
           expect(tester.getRect(other).overlaps(box), isFalse,

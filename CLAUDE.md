@@ -4189,6 +4189,18 @@ device-verified)**
   ×1.3 the moment the tile grew; and the quiet tile's fill is
   `railGround`→`cardGround`, semantic surfaces, because a fixed light colour
   becomes a white tile under a pale icon in night mode.
+- **Layout after the 26 Sep 2026 revert (owner): the pre-`760563b` look,
+  with three invisible fixes.** The top bar is opaque in `F.pageGround` with
+  **no bottom line and no shadow** (`scrolledUnderElevation: 0`). The dock
+  labels get a 4px side inset and a pinned 1.3 line height, so «الملف الطبي»
+  and «الإعدادات» never touch at 375 — same look, slightly smaller only when
+  they would. Every tab gets «ضيف»'s overhang added to `padding.bottom`
+  (`ShellBottomExtra`), so the last row («امسح حسابي») clears the +.
+  «يومك» subtracts it, because its pill clearance is larger, and its pixels
+  are unchanged. **«القريب مني» floats again, and it is shown only when the
+  list is scrolled to its end**, where its own clearance leaves empty space
+  under it, so it can never sit on a card. Its shape is 44 and its hit area
+  56. `layout_iphone_test` pins all of this, mutation-checked.
 - **«ضيف» is a circle — with its word under it.** Olive fill, gold ring,
   gold «+», exactly as asked; the label sits beneath the circle because
   «no icon-only buttons» was written for a 72-year-old and the owner chose
