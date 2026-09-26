@@ -4189,6 +4189,20 @@ device-verified)**
   ×1.3 the moment the tile grew; and the quiet tile's fill is
   `railGround`→`cardGround`, semantic surfaces, because a fixed light colour
   becomes a white tile under a pale icon in night mode.
+- **The visual reference is TestFlight 1.13.1 (87), the last build the
+  boss saw** (owner, 26 Sep 2026). No archive of it exists on this Mac; the
+  only release iOS build before today's 2.0.0 ran at 00:38–00:42 on 26 Sep,
+  so `4e49298` (00:25) is taken as its commit — `build/capture/` holds the
+  golden capture used to compare (375×667, real fonts, per screen in its
+  own process: one process hung after the settings tab). Three visible
+  changes were made on top of that reference at the owner's request, and
+  none of them is a restore — the rail row and the 48h card had been the
+  same since 14 Sep: a taken dose puts its **✓ on the rail node** (mockup
+  24) with name and time side by side instead of the time pushed to the
+  far edge; every dose row has a rail node (gold dot while it still needs
+  him); and «خلال ٤٨ ساعة» reads **name first**, then «بكرة ٩:٢٧ م».
+  «القريب مني» is **always visible** again, and the list's bottom padding
+  leaves room for pill + «ضيف» + dock so the last card scrolls fully clear.
 - **Layout after the 26 Sep 2026 revert (owner): the pre-`760563b` look,
   with three invisible fixes.** The top bar is opaque in `F.pageGround` with
   **no bottom line and no shadow** (`scrolledUnderElevation: 0`). The dock
@@ -4197,10 +4211,9 @@ device-verified)**
   they would. Every tab gets «ضيف»'s overhang added to `padding.bottom`
   (`ShellBottomExtra`), so the last row («امسح حسابي») clears the +.
   «يومك» subtracts it, because its pill clearance is larger, and its pixels
-  are unchanged. **«القريب مني» floats again, and it is shown only when the
-  list is scrolled to its end**, where its own clearance leaves empty space
-  under it, so it can never sit on a card. Its shape is 44 and its hit area
-  56. `layout_iphone_test` pins all of this, mutation-checked.
+  are unchanged. «القريب مني» floats again (always visible — see above;
+  the «only at the end» rule lasted one commit, `8fa3d47`). Its shape is 44
+  and its hit area 56. `layout_iphone_test` pins all of this.
 - **«ضيف» is a circle — with its word under it.** Olive fill, gold ring,
   gold «+», exactly as asked; the label sits beneath the circle because
   «no icon-only buttons» was written for a 72-year-old and the owner chose

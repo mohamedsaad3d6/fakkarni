@@ -234,6 +234,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
                                 onDark: true,
                                 elder: snap.data?.elderMode ?? false,
                                 hint: 'قول «أخدته» أو دوس',
+                                gapBelow: F.s10,
                                 parse: parseDoseAnswer,
                                 describe: (a) => a == DoseAnswer.taken ? 'أخدته' : 'فكّرني بعدين',
                                 onApply: (a) => _spoken(a, pending),
@@ -386,8 +387,8 @@ class _PendingActions extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // المسافة تحت زرار «اتكلم» جواه (gapBelow) — من غيره الشاشة زي 1.13.1 بالبكسل
         Align(alignment: AlignmentDirectional.centerEnd, child: listen),
-        const SizedBox(height: F.s10),
         FPrimaryButton(label: 'تم التناول ✅', onPressed: enabled ? onTaken : null),
         const SizedBox(height: F.s10),
         Row(

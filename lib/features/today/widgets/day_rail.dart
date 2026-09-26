@@ -49,14 +49,22 @@ class DayRail extends StatelessWidget {
   /// عرض عمود السكة، ومقاس العقدة.
   static const double _railWidth = 28;
   static const double _node = 14;
+  static const double _doneNode = 20;
+  static const double _doseNode = 10;
 
   @override
   Widget build(BuildContext context) {
-    final entries = <({DateTime at, bool isAnchor, Widget child})>[
+    final entries = <({DateTime at, bool isAnchor, _RailNode node, Widget child})>[
       for (final anchor in anchors)
-        (at: anchor.at, isAnchor: true, child: _anchorLabel(anchor)),
+        (at: anchor.at, isAnchor: true, node: _RailNode.anchor, child: _anchorLabel(anchor)),
       for (final group in groups)
-        (at: group.first.scheduledAt, isAnchor: false, child: _dose(group, PatientVoice.of(context))),
+        (
+          at: group.first.scheduledAt,
+          isAnchor: false,
+          // كل جرعة ليها علامتها على السكة: ✓ للي اتاخدت، ونقطة ذهبية للي لسه
+          node: group.every((d) => d.isDone) ? _RailNode.done : _RailNode.dose,
+          child: _dose(group, PatientVoice.of(context)),
+        ),
     ]..sort((a, b) {
         final byTime = a.at.compareTo(b.at);
         // مرساة وجرعة في نفس الدقيقة: المرساة الأول
@@ -69,7 +77,7 @@ class DayRail extends StatelessWidget {
       children: [
         for (var i = 0; i < entries.length; i++)
           _railRow(
-            node: entries[i].isAnchor,
+            node: entries[i].node,
             first: i == 0,
             last: i == entries.length - 1,
             child: entries[i].child,
@@ -80,7 +88,7 @@ class DayRail extends StatelessWidget {
 
   /// صف واحد: عمود السكة على اليمين (أول ابن في RTL) والمحتوى جنبه.
   Widget _railRow({
-    required bool node,
+    required _RailNode node,
     required bool first,
     required bool last,
     required Widget child,
@@ -101,18 +109,36 @@ class DayRail extends StatelessWidget {
                     height: last ? F.s20 : null,
                     child: Container(width: 2, color: F.line),
                   ),
-                  if (node)
-                    Positioned(
-                      top: F.s20 - _node / 2,
-                      child: Container(
-                        width: _node,
-                        height: _node,
-                        decoration: BoxDecoration(
-                          color: F.green,
-                          shape: BoxShape.circle,
+                  switch (node) {
+                    _RailNode.anchor => Positioned(
+                        top: F.s20 - _node / 2,
+                        child: Container(
+                          width: _node,
+                          height: _node,
+                          decoration: BoxDecoration(color: F.green, shape: BoxShape.circle),
                         ),
                       ),
-                    ),
+                    // اتاخدت: الصح على السكة نفسها (المخطط ٢٤) — مش جوّه السطر
+                    _RailNode.done => Positioned(
+                        top: F.s20 - _doneNode / 2,
+                        child: Container(
+                          width: _doneNode,
+                          height: _doneNode,
+                          decoration: BoxDecoration(color: F.pageGround, shape: BoxShape.circle),
+                          alignment: Alignment.center,
+                          child: Icon(Icons.check, size: _doneNode - 4, color: F.greenOk),
+                        ),
+                      ),
+                    // لسه عايزاك: نقطة ذهبية صغيرة — نفس معنى حافة الكارت
+                    _RailNode.dose => Positioned(
+                        top: F.s20 - _doseNode / 2,
+                        child: Container(
+                          width: _doseNode,
+                          height: _doseNode,
+                          decoration: const BoxDecoration(color: F.gold, shape: BoxShape.circle),
+                        ),
+                      ),
+                  },
                 ],
               ),
             ),
@@ -151,9 +177,8 @@ class DayRail extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: F.s8),
         child: Row(
           children: [
-            Icon(Icons.check, size: 22, color: F.greenOk),
-            const SizedBox(width: F.s8),
-            Expanded(
+            // الصح على السكة (شوف _railRow) — هنا الاسم ووقته جنب بعض، سطر واحد
+            Flexible(
               child: Text(
                 group.map((d) => d.medicationName).join(' + '),
                 textDirection: nameDirection(group.first.medicationName),
@@ -252,3 +277,6 @@ class DayRail extends StatelessWidget {
     );
   }
 }
+
+/// علامة الصف على السكة: عقدة مرساة خضرا، ✓ لجرعة اتاخدت، نقطة ذهبية لجرعة لسه.
+enum _RailNode { anchor, done, dose }

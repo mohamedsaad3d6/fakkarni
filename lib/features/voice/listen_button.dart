@@ -30,8 +30,13 @@ class ListenButton<T> extends StatefulWidget {
     this.elder = false,
     this.onDark = false,
     this.hint,
+    this.gapBelow = 0,
     super.key,
   });
+
+  /// مسافة تحت الزرار — **مع الزرار وبس**: لو مش ظاهر الشاشة زي ما كانت
+  /// بالبكسل (فجوة فاضية كانت بتزقّ أزرار التذكير لتحت).
+  final double gapBelow;
 
 
   /// كلمة جنب الزرار بتقول إيه اللي يتقال («قول «أخدته» أو دوس») — بتظهر
@@ -118,54 +123,58 @@ class _ListenButtonState<T> extends State<ListenButton<T>> with WidgetsBindingOb
       listenable: Listenable.merge([flow.voice, flow]),
       builder: (context, _) {
         if (!flow.available) return const SizedBox.shrink();
-        final size = widget.elder ? F.elderTextSize : F.minTextSize;
-        final height = widget.elder ? F.primaryButtonHeight : F.minTapTarget;
-        final ink = widget.onDark ? F.onDark : F.ink;
-        final hint = widget.hint;
-        final button = Semantics(
-          button: true,
-          label: 'اتكلم',
-          child: Material(
-            key: ValueKey('listen-${widget.tag}'),
-            color: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(F.radiusCard),
-              side: BorderSide(color: widget.onDark ? F.onDarkMuted : F.line, width: 1.5),
-            ),
-            child: InkWell(
-              onTap: _tap,
-              borderRadius: BorderRadius.circular(F.radiusCard),
-              child: Container(
-                constraints: BoxConstraints(minHeight: height, minWidth: height),
-                padding: EdgeInsets.symmetric(horizontal: widget.elder ? F.s14 : F.s10),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.mic_none_outlined, size: widget.elder ? 28 : 22, color: ink),
-                    const SizedBox(width: F.s6),
-                    Text('اتكلم', style: TextStyle(fontSize: size, fontWeight: FontWeight.w700, color: ink)),
-                  ],
-                ),
-              ),
+        return Padding(padding: EdgeInsets.only(bottom: widget.gapBelow), child: _button(flow));
+      },
+    );
+  }
+
+  Widget _button(ListenFlow<T> flow) {
+    final size = widget.elder ? F.elderTextSize : F.minTextSize;
+    final height = widget.elder ? F.primaryButtonHeight : F.minTapTarget;
+    final ink = widget.onDark ? F.onDark : F.ink;
+    final hint = widget.hint;
+    final button = Semantics(
+      button: true,
+      label: 'اتكلم',
+      child: Material(
+        key: ValueKey('listen-${widget.tag}'),
+        color: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(F.radiusCard),
+          side: BorderSide(color: widget.onDark ? F.onDarkMuted : F.line, width: 1.5),
+        ),
+        child: InkWell(
+          onTap: _tap,
+          borderRadius: BorderRadius.circular(F.radiusCard),
+          child: Container(
+            constraints: BoxConstraints(minHeight: height, minWidth: height),
+            padding: EdgeInsets.symmetric(horizontal: widget.elder ? F.s14 : F.s10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.mic_none_outlined, size: widget.elder ? 28 : 22, color: ink),
+                const SizedBox(width: F.s6),
+                Text('اتكلم', style: TextStyle(fontSize: size, fontWeight: FontWeight.w700, color: ink)),
+              ],
             ),
           ),
-        );
-        if (hint == null) return button;
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(
-              child: Text(
-                hint,
-                key: ValueKey('listen-hint-${widget.tag}'),
-                style: TextStyle(fontSize: widget.elder ? F.elderTextSize : F.minBodySize, color: ink, height: 1.4),
-              ),
-            ),
-            const SizedBox(width: F.s10),
-            button,
-          ],
-        );
-      },
+        ),
+      ),
+    );
+    if (hint == null) return button;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            hint,
+            key: ValueKey('listen-hint-${widget.tag}'),
+            style: TextStyle(fontSize: widget.elder ? F.elderTextSize : F.minBodySize, color: ink, height: 1.4),
+          ),
+        ),
+        const SizedBox(width: F.s10),
+        button,
+      ],
     );
   }
 }

@@ -62,16 +62,6 @@ class TodayScreen extends StatefulWidget {
 }
 
 class _TodayScreenState extends State<TodayScreen> {
-  /// «القريب مني» ظاهر بس والصفحة واصلة لآخرها (أو قصيرة ومفيش لفّ) —
-  /// ساعتها اللي تحته المسافة الفاضية بتاعته، مش كارت.
-  bool _nearbyVisible = false;
-
-  void _trackEnd(ScrollMetrics m, int depth) {
-    if (depth != 0 || m.axis != Axis.vertical) return;
-    final atEnd = m.maxScrollExtent - m.pixels <= 1;
-    if (atEnd != _nearbyVisible && mounted) setState(() => _nearbyVisible = atEnd);
-  }
-
   StreamSubscription<List<DoseSchedule>>? _schedulesSub;
   List<DoseSchedule> _schedules = const [];
 
@@ -347,27 +337,20 @@ class _TodayScreenState extends State<TodayScreen> {
     // Scaffold جوّه تبويب الهيكل: الأرضية، وMaterial للـInkWell لما الشاشة
     // تتبني لوحدها في الاختبار.
     return Scaffold(
-      // «القريب مني» عايم في آخر السطر (ناحية الشمال في RTL) — ثانوي، مش
-      // أساسي: الأساسي الوحيد على الشاشة دي «تأكيد الجرعة».
-      // **وعمره ما يقعد فوق كارت** (آيفون، ٢٦ سبتمبر ٢٠٢٦: كان فوق كارت
-      // الجرعة على SE): بيظهر بس والصفحة واصلة لآخرها — هناك المسافة اللي
-      // تحت آخر صف ([_NearbyPill.clearance]) فاضية، فمفيش حاجة تحته. وبيختفي
+      // «القريب مني» عايم في آخر السطر (ناحية الشمال في RTL)، **ظاهر دايماً**
+      // (المالك، ٢٦ سبتمبر ٢٠٢٦ — زي نسخة 1.13.1) — ثانوي، مش أساسي: الأساسي
+      // الوحيد على الشاشة دي «تأكيد الجرعة». وعمره ما يغطّي آخر كارت: القايمة
+      // بتسيب تحتها مكان البيل + «ضيف» + الدوك ([_NearbyPill.clearance] فوق
+      // `padding.bottom`)، فآخر صف بيتزحلق لحد ما يطلع فوقه كله. وبيختفي
       // والكيبورد مرفوع — شوف `keyboard_dismiss.dart`.
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: keyboardIsUp(context)
           ? null
-          : IgnorePointer(
-              ignoring: !_nearbyVisible,
-              child: AnimatedOpacity(
-                opacity: _nearbyVisible ? 1 : 0,
-                duration: const Duration(milliseconds: 150),
-                child: Padding(
-                  // الهدف ٥٦ والشكل ٤٤ — الهامش بيقل بنص الفرق، فالبيل في مكانه بالظبط
-                  // مسافة الهيكل لـ«ضيف» بتتطرح: البيل في مكانه القديم بالظبط
-                  padding: EdgeInsets.only(bottom: F.s10 - _NearbyPill.hitSlop + MediaQuery.of(context).padding.bottom - ShellBottomExtra.of(context)),
-                  child: _NearbyPill(onTap: _openNearby),
-                ),
-              ),
+          : Padding(
+              // الهدف ٥٦ والشكل ٤٤ — الهامش بيقل بنص الفرق، فالبيل في مكانه بالظبط؛
+              // ومسافة الهيكل لـ«ضيف» بتتطرح عشان يفضل فوق الدوك بنفس المسافة القديمة
+              padding: EdgeInsets.only(bottom: F.s10 - _NearbyPill.hitSlop + MediaQuery.of(context).padding.bottom - ShellBottomExtra.of(context)),
+              child: _NearbyPill(onTap: _openNearby),
             ),
       body: StreamBuilder<List<DoseEventView>>(
         stream: _events,
@@ -379,17 +362,7 @@ class _TodayScreenState extends State<TodayScreen> {
           final lines = nowLines(nowCards, _snoozed);
           final glucoseNow = latestOutsideUsual(_readings);
 
-          return NotificationListener<ScrollMetricsNotification>(
-            onNotification: (n) {
-              _trackEnd(n.metrics, n.depth);
-              return false;
-            },
-            child: NotificationListener<ScrollUpdateNotification>(
-            onNotification: (n) {
-              _trackEnd(n.metrics, n.depth);
-              return false;
-            },
-            child: ListView(
+          return ListView(
             // مساحة تحت عشان آخر كارت يعدّي من تحت الدوك من غير ما يتخبّى
             // تحته. `padding.bottom` جوّه جسم الـScaffold المفرود بيساوي
             // طول الدوك — Flutter بيحطه هناك بالظبط للسبب ده.
@@ -402,9 +375,9 @@ class _TodayScreenState extends State<TodayScreen> {
               F.gap,
               F.gap,
               F.gap,
-              // مسافة «القريب مني» أكبر من طلعة «ضيف»، فبتغطّيها — مسافة الهيكل
-              // بتتطرح عشان آخر الصفحة يفضل في مكانه القديم بالبكسل
-              F.gap + MediaQuery.of(context).padding.bottom - ShellBottomExtra.of(context) + (keyboardIsUp(context) ? 0 : _NearbyPill.clearance),
+              // الدوك (`padding.bottom` جوّه الهيكل) + طلعة «ضيف» (اللي الهيكل
+              // زوّدها) + البيل بهامشه — فآخر كارت بيطلع فوق التلاتة
+              F.gap + MediaQuery.of(context).padding.bottom + (keyboardIsUp(context) ? 0 : _NearbyPill.clearance),
             ),
             children: [
               StreamBuilder<PatientRow?>(
@@ -669,8 +642,6 @@ class _TodayScreenState extends State<TodayScreen> {
               // مسافة تحت عشان آخر سطر ما يستخبّاش ورا زرار «ضيف»
               const SizedBox(height: F.s30 * 2),
             ],
-          ),
-            ),
           );
         },
       ),
@@ -924,26 +895,28 @@ class _Upcoming extends StatelessWidget {
                   if (i > 0) Divider(height: 1, color: F.lineSoft),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: F.s14, vertical: F.s12),
+                    // الاسم الأول، وبعده اليوم والساعة (المخطط ٠٤)
                     child: Row(
                       children: [
-                        Text(
-                          'بكرة ${arabicTime(g.first.scheduledAt)}',
-                          style: TextStyle(fontSize: F.minTextSize, fontWeight: FontWeight.w700, color: F.ink),
-                        ),
-                        const SizedBox(width: F.s12),
                         Expanded(
                           child: Text(
                             g.map((d) => d.medicationName).join(' + '),
-                            textDirection: TextDirection.ltr,
-                            textAlign: TextAlign.right,
+                            textDirection: nameDirection(g.first.medicationName),
+                            textAlign: TextAlign.start,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: F.minTextSize,
-                              color: F.mutedDark,
+                              fontWeight: FontWeight.w700,
+                              color: F.ink,
                               fontFamily: F.monoFamily,
                               fontFamilyFallback: F.monoFallback,
                             ),
                           ),
+                        ),
+                        const SizedBox(width: F.s12),
+                        Text(
+                          'بكرة ${arabicTime(g.first.scheduledAt)}',
+                          style: TextStyle(fontSize: F.minTextSize, color: F.mutedDark),
                         ),
                       ],
                     ),
@@ -1005,8 +978,8 @@ class _EmptyPanel extends StatelessWidget {
       );
 }
 
-/// «القريب مني» — بيل عايم صغير تحت الشمال، **في الرئيسية وبس** — وبيظهر بس
-/// والصفحة في آخرها، فعمره ما يقعد فوق كارت. الشكل ٤٤ والهدف ٥٦.
+/// «القريب مني» — بيل عايم صغير تحت الشمال، **في الرئيسية وبس**، ظاهر دايماً؛
+/// القايمة بتسيب مكانه تحت آخر صف فعمره ما يغطّي كارت. الشكل ٤٤ والهدف ٥٦.
 ///
 /// دهبي مليان بحد زيتي زي ما المالك طلب. الدهبي هنا حالة «تقدر تروح
 /// دلوقتي» مش تنبيه، وهو الزرار الوحيد بالشكل ده على الشاشة.
